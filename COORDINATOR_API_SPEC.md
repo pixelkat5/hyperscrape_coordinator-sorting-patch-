@@ -20,7 +20,8 @@ Registers a worker with the coordinator
 ### Response
 ```json
 {
-    "token": "5e4bb24a-ea14-4ec8-8956-dfc551a9c2ff"
+    "auth_token": "5e4bb24a-ea14-4ec8-8956-dfc551a9c2ff",
+    "worker_id": "a7f84a03-32ff-44de-8640-077bcffb05be"
 }
 ```
 
@@ -31,7 +32,7 @@ Gets chunks for the worker to download concurrently
 - `n` - The number of chunks to retrieve
 
 ### Request Headers
-- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received response from `/register`
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received auth token from `/register`
 
 ### Response
 ```json
@@ -61,7 +62,7 @@ Gets chunks for the worker to download concurrently
 ```
 
 ### Request Headers
-- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received response from `/register`
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received auth token from `/register`
 
 ### Response
 No content, returns status code `200`
@@ -75,19 +76,20 @@ Registers a receiver with the coordinator
 {
     "url": "https://minerva-receiver.hackerdude.tech/upload"
     "max_upload": 100,
-    "receiver_token": "c363b4fe-2c75-44a7-a3df-28064ef99630",
+    "auth_token": "c363b4fe-2c75-44a7-a3df-28064ef99630",
     "hostname": "archbook"
 }
 ```
 - `url` - The upload endpoint
 - `max_upload` - max upload speed in mbps
-- `receiver_token` - Secret token used to ensure receivers are authorized
+- `auth_token` - Secret token used to ensure receivers are authorized
 - `hostname` - The hostname of the receiver
 
 ### Response
 ```json
 {
-    "token": "5e4bb24a-ea14-4ec8-8956-dfc551a9c2ff"
+    "receiver_id": "5e4bb24a-ea14-4ec8-8956-dfc551a9c2ff",
+    "auth_token": "fde47b8f-83e4-4d0b-b612-50d4ba1fbf13"
 }
 ```
 
@@ -113,14 +115,14 @@ Get all files currently handled by this receiver
 - Returns a map of file IDs to their info
 - NOTE: Only returns chunks assigned to this receiver
 
-## GET `/worker_info?token=TOKEN`
-Get a worker's info from a token
+## GET `/worker_info?id=WORKER_ID`
+Get a worker's info from an id
 
 ### Request Headers
-- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received response from `/register_worker`
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received auth token from `/register`
 
 ### Request
-- `TOKEN` - The worker's token
+- `WORKER_ID` - The worker's id
 
 ### Response
 ```json
@@ -156,7 +158,7 @@ Tell the coordinator this receiver is still alive and also uploads some basic da
 - Also tells the coordinator whether each chunk is received or not
 
 ### Request Headers
-- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received response from `/register_worker`
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the received auth token from `/register`
 
 ### Response
 returns no content, 200

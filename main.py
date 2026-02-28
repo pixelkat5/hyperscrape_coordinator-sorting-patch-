@@ -3,7 +3,7 @@ from files import HyperscrapeFile
 import state
 from flask import Flask, request
 
-from helpers import get_request_ip, get_worker
+from helpers import get_auth_token, get_request_ip, get_worker
 
 
 app = Flask(__name__)
@@ -30,8 +30,10 @@ def register_worker():
         return {"error": "Invalid Request"}, 400
     if (data["version"] > state.config['general']['version']):
         return {"error": f"Version mismatch, expected {state.config['general']['version']}"}, 400
+    auth_token = state.add_worker(ip, data["max_upload"], data["max_download"], data["max_per_file_speed"], data["threads"])
     return {
-        "token": state.add_worker(ip, data["max_upload"], data["max_download"], data["max_per_file_speed"], data["threads"])
+        "worker_id": auth_token.id,
+        "auth_token": auth_token.as_token()
     }
 
 @app.route("/chunks", methods=['GET'])
@@ -100,6 +102,25 @@ def put_status():
         state.chunks[chunk_id].worker_status[worker.worker_id].downloaded = data[chunk_id]["dowloaded"]
         state.chunks[chunk_id].worker_status[worker.worker_id].uploaded = data[chunk_id]["uploaded"]
 
+
+##@app.route("/receivers", methods=['POST'])
+##def register_receiver():
+##    if (not get_auth_token() in state.config["general"]["receiver_api_keys"]):
+##        return {"error": "Invalid token!"}, 403
+##    
+##    data = request.json
+##    if ((not "url" in data) or 
+##        (not "max_upload" in data) or 
+##        (not "receiver_token" in data) or 
+##        (not "hostname" in data)):
+##        return {"error": "Invalid request"}, 400
+##    
+##    state.add_receiver
+
+
+###
+# FOR DEBUGGING ONLY!!!!
+###
 state.files = {}
 state.chunks = {}
 state.chunk_to_file = {}
@@ -113,8 +134,8 @@ state.add_file(HyperscrapeFile(
     1024*25
 ))
 
-
 if __name__ == "__main__":
     from waitress import serve
-    print(f'Listening on {state.config["server"]["port"]}')
+    state.console.print(f'Listening on {state.config["server"]["port"]}')
+    state.console.start()
     serve(app, host="0.0.0.0", port=state.config["server"]["port"], threads=state.config["server"]["threads"])

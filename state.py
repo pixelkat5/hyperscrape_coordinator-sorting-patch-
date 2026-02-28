@@ -2,6 +2,8 @@
 # State vars
 ###
 from uuid import uuid4
+from auth_token import AuthToken
+from console import Console
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from receivers import Receiver
 from workers import Worker
@@ -60,6 +62,8 @@ class AssignedChunks():
                 reorder_file_workers(file_id)
             del self._assigned_chunks[worker_id]
 ###
+global console
+console = Console()
 
 global workers
 global receivers
@@ -144,8 +148,17 @@ def remove_worker(worker_id: str):
 def add_worker(ip: str, max_upload: int, max_download: int, max_per_file_speed: int, threads: int):
     global workers
     worker_id = str(uuid4())
-    workers[worker_id] = Worker(worker_id, ip, max_upload, max_download, max_per_file_speed, threads)
-    return worker_id
+    auth_token = AuthToken(worker_id)
+    workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_upload, max_download, max_per_file_speed, threads)
+    return auth_token
+
+# Receivers
+def remove_receiver(receiver_id: str):
+    del receivers[receiver_id]
+
+#def add_receiver(url):
+#    receiver_id = str(uuid4())
+#    receivers[receiver_id] = Receiver(url, max_upload, receiver_token, hostname)
 
 # IP banning
 def write_banned_ips():
