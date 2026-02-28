@@ -18,7 +18,7 @@ Registers a worker with the coordinator
 }
 ```
 
-## GET /get_jobs?n=10
+## GET `/get_jobs?n=10`
 Gets jobs for the worker to execute concurrently
 ### Request
 - `n` - the number of jobs to get
@@ -43,7 +43,7 @@ Gets jobs for the worker to execute concurrently
     - `range` is the target section of data to download
     - `destination` is the URL to the uploaded to upload files to (see `hyperscrape_reciever`)
 
-## PUT /status
+## PUT `/status`
 ### Request
 ```json
 {
