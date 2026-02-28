@@ -41,7 +41,7 @@ Gets jobs for the worker to execute concurrently
 - Array of `job` objects
     - `job_id` a uuid to represent the job
     - `url` is the target URL to download
-    - `range` is the target section of data to download
+    - `range` is the target section of data to download [inclusive, exclusive]
     - `destination` is the URL to the uploaded to upload files to (see `hyperscrape_reciever`)
 
 ## PUT `/status`
@@ -104,3 +104,24 @@ Gets a file info from a job id
 ```
 - `file_path` the path for the file to be uploaded
 - `total_size` the total file size
+
+## GET `/worker_info?token=TOKEN`
+Gets a file info from a job id
+
+### Request Headers
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register_worker`
+
+### Request
+- `JOB_ID` - The ID of the job to get file info for
+
+### Response
+```json
+{
+    "max_upload": 100,
+    "max_download": 100,
+    "jobs": [ "9b38d89a-f7b5-4676-af33-d2c54f16fa50" ]
+}
+```
+- `max_upload` - The recorded max upload of this worker
+- `max_download` - The recorded max download of this worker
+- `jobs` - A list of job UUIDs assigned to thei worker
