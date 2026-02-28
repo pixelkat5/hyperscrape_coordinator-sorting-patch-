@@ -5,11 +5,10 @@ threads = 32
 [general]
 version = 1 # The coordinator version
 
-# API keys for receivers
-receiver_api_keys = [
-    "465e24c0-a893-4ed7-ab1e-67ce19e8dcec"
-]
-
 last_seen_timeout = 60 # How many seconds without getting a ping before we assume this worker died
 
 trust_count = 3 # How many workers need to download the same chunk before we trust that it is accurate
+
+[paths]
+chunk_temp_path = "/staging/temp"
+storage_path = "/stating"

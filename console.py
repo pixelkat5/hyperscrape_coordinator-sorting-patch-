@@ -13,10 +13,10 @@ class Console():
         self._thread = Thread(target=self.main_thread)
         self._commands = {
             "help": [self.help, "Print information about available commands"],
-            "list-receivers": [self.list_receivers, "List receivers"],
             "list-workers": [self.list_workers, "List workers"],
-            "list-files": [self.list_file_chunks, "List workers"],
-            "list-chunks": [self.list_file_chunks, "List chunks for a file (specify file id as second arg)"],
+            "list-files": [self.list_files, "List files"],
+            "get-file": [self.get_file, "List chunks for a file and other info (specify file id as second arg)"],
+            "list-downloadable": [self.list_downloadable, "List downloadable files"],
             "get-chunk": [self.get_chunk, "Get chunk info (specify chunk id as second arg)"],
             "quit": [self.quit, "Shutdown the server"]
         }
@@ -45,9 +45,9 @@ class Console():
         for command in self._commands:
             print(f"{command}\t-\t{self._commands[command][1]}")
 
-    def list_receivers(self, argv):
-        print("Receivers:")
-        self.dynamic_list(list(state.receivers.keys()), displayFunction=lambda index, receiver_id: f"{index}. {receiver_id}\t-\t{state.receivers[receiver_id].hostname} ({state.receivers[receiver_id].url})")
+    def list_downloadable(self, argv):
+        print("Downloadable Files:")
+        self.dynamic_list(state.sorted_downloadable_files, displayFunction=lambda index, el: f"{index}. {el} ({state.files[el].file_path})")
 
     def list_workers(self, argv):
         print("Workers:")
@@ -55,27 +55,31 @@ class Console():
 
     def list_files(self, argv):
         print("Files (path, complete):")
-        self.dynamic_list(list(state.files.keys()), displayFunction=lambda index, file_id: f"{index}. {file_id}\t-\t{state.files[file_id].file_path} ({state.files[file_id].complete})")
+        self.dynamic_list(list(state.files.keys()), displayFunction=lambda index, file_id: f"{index}. {file_id}\t-\t{state.files[file_id].file_path} ({state.check_file_complete(file_id)})")
 
-    def list_file_chunks(self, argv):
+    def get_file(self, argv):
         file_id = argv[1]
+        file = state.files[file_id]
+        print(f"File: {file.file_id}")
+        print(f"Path: {file.file_path}")
+        print(f"Size: {file.total_size}")
+        print(f"URL: {file.url}")
         print(f"Chunks for {file_id}:")
-        chunks = state.files[file_id].chunks
-        self.dynamic_list(chunks, displayFunction=lambda index, chunk_id: f"{index}. {chunk_id}\t-\tUP: {state.chunks[chunk_id].uploaded} WORKERS: ({len(state.chunks[chunk_id].worker_status)})")
+        chunks = file.chunks
+        self.dynamic_list(chunks, displayFunction=lambda index, chunk_id: f"{index}. {chunk_id}\t-\tWORKERS: ({len(state.chunks[chunk_id].worker_status)})")
 
     def get_chunk(self, argv):
         chunk = state.chunks[argv[1]]
         print(f"Chunk: {argv[1]}")
-        print(f"Uploaded: {chunk.uploaded}")
         print(f"Range: [{chunk.start}, {chunk.end}]")
         print("Workers:")
         for worker_id in chunk.worker_status:
-            print(f"- {worker_id} D: {chunk.worker_status[worker_id].downloaded}\tU: {chunk.worker_status[worker_id].uploaded}")
+            print(f"- {worker_id} D: {chunk.worker_status[worker_id].downloaded}\tU: {chunk.worker_status[worker_id].uploaded}\tH: {chunk.worker_status[worker_id].hash}\tC: {chunk.worker_status[worker_id].complete}\tLU: {chunk.worker_status[worker_id].last_updated}")
 
     def dynamic_list(self, list: list[object], displayFunction: Callable[[int, object], str]):
         list_index = 0
         list_size = 10
-        while self._should_run:
+        while True:
             list_elements = list[list_index:list_index+list_size]
             i = 0
             for element in list_elements:

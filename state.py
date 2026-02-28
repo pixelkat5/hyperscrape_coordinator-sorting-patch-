@@ -5,7 +5,6 @@ from uuid import uuid4
 from auth_token import AuthToken
 from console import Console
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
-from receivers import Receiver
 from workers import Worker
 from msgspec import json
 import pickle
@@ -19,6 +18,25 @@ try:
 except:
     pass
 
+global console
+console = Console()
+
+global workers
+global files
+global chunks
+global chunk_to_file
+global assigned_chunks
+global file_chunk_count
+global file_worker_count
+global sorted_files
+global file_hashes
+workers: dict[str, Worker] = {}
+files: dict[str, HyperscrapeFile] = {}
+chunks: dict[str, HyperscrapeChunk] = {}
+chunk_to_file: dict[str, str] = {} # We store this for efficient chunk to file lookups (duh)
+file_worker_counts: dict[str, int] = {} # Count how many workers are using each file
+sorted_downloadable_files: list[str] = [] # List of files to be downloaded sorted by how many workers are using it
+file_hashes: dict[str, dict[str, str]] = {}
 
 ###
 # State Files
@@ -34,13 +52,17 @@ def save_file_mapping():
     with open("./chunk_file_mapping.bin", 'wb') as file:
         pickle.dump(chunk_to_file, file)
 
+def save_file_hashes():
+    with open("./file_hashes.bin", 'wb') as file:
+        pickle.dump(file_hashes, file)
+
 def save_files():
     save_chunk_state()
     save_file_mapping()
     save_file_state()
+    save_file_hashes()
 ###
 
-###
 class AssignedChunks():
     def __init__(self):
         self._assigned_chunks: dict[str, list[str]] = {} # Each worker has multiple chunks _assigned_chunks[worker_id] = [chunk_id, chunk_id, chunk_id]
@@ -50,57 +72,23 @@ class AssignedChunks():
             self._assigned_chunks[worker_id] = []
         self._assigned_chunks[worker_id].append(chunk_id)
         chunks[chunk_id].worker_status[worker_id] = WorkerStatus(0, 0)
+    
+    def unassign_chunk(self, worker_id, chunk_id):
+        chunk = chunks[chunk_id]
+        if (worker_id in chunk.worker_status):
+            del chunk.worker_status[worker_id]
+        # Fix file ordering
+        file_id = chunk_to_file[chunk_id]
+        file_worker_counts[file_id] -= 1
+        reorder_file_workers(file_id)
+        self._assigned_chunks[worker_id].remove(chunk_id)
 
     def remove_worker(self, worker_id):
         if (worker_id in self._assigned_chunks):
             for chunk_id in self._assigned_chunks[worker_id]:
-                chunk = chunks[chunk_id]
-                del chunk.worker_status[worker_id]
-                # Fix file ordering
-                file_id = chunk_to_file[chunk_id]
-                file_worker_counts[file_id] -= 1
-                reorder_file_workers(file_id)
+                self.unassign_chunk(worker_id, chunk_id)
             del self._assigned_chunks[worker_id]
-###
-global console
-console = Console()
-
-global workers
-global receivers
-global files
-global chunks
-global chunk_to_file
-global assigned_chunks
-global file_chunk_count
-global file_worker_count
-global sorted_files
-workers: dict[str, Worker] = {}
-receivers: dict[str, Receiver] = {}
-files: dict[str, HyperscrapeFile] = {}
-chunks: dict[str, HyperscrapeChunk] = {}
-chunk_to_file: dict[str, str] = {} # We store this for efficient chunk to file lookups (duh)
 assigned_chunks: AssignedChunks = AssignedChunks()
-file_worker_counts: dict[str, int] = {} # Count how many workers are using each file
-sorted_downloadable_files: list[str] = [] # List of files to be downloaded sorted by how many workers are using it
-
-try:
-    with open("./file_state.bin", 'rb') as file:
-        files = pickle.load(file)
-    with open("./chunk_state.bin", 'rb') as file:
-        chunks = pickle.load(file)
-    with open("./chunk_file_mapping.bin", 'rb') as file:
-        chunk_to_file = pickle.load(file)
-    print("Generating files to download...")
-    for file_id in files:
-        file = files[file_id]
-        if (not file.complete):
-            sorted_downloadable_files.append(file_id)
-            file_worker_counts[file_id] = 0
-    print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
-except Exception as e:
-    print("NOTE: Could not load previous file state:")
-    print(e)
-    save_files()
 
 global config
 config = None
@@ -152,13 +140,13 @@ def add_worker(ip: str, max_upload: int, max_download: int, max_per_file_speed: 
     workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_upload, max_download, max_per_file_speed, threads)
     return auth_token
 
-# Receivers
-def remove_receiver(receiver_id: str):
-    del receivers[receiver_id]
-
-#def add_receiver(url):
-#    receiver_id = str(uuid4())
-#    receivers[receiver_id] = Receiver(url, max_upload, receiver_token, hostname)
+# File helper
+def check_file_complete(file_id: str):
+    for chunk_id in files[file_id].chunks:
+        for worker_id in chunks[chunk_id].worker_status:
+            if (not chunks[chunk_id].worker_status[worker_id].complete):
+                return False
+    return True
 
 # IP banning
 def write_banned_ips():
@@ -176,3 +164,26 @@ def unban_ip(ip: str):
     if (ip in banned_ips):
         banned_ips.remove(ip)
         write_banned_ips()
+
+
+
+try:
+    with open("./file_state.bin", 'rb') as file:
+        files = pickle.load(file)
+    with open("./chunk_state.bin", 'rb') as file:
+        chunks = pickle.load(file)
+    with open("./chunk_file_mapping.bin", 'rb') as file:
+        chunk_to_file = pickle.load(file)
+    with open("./file_hashes.bin", 'rb') as file:
+        file_hashes = pickle.load(file)
+    print("Generating files to download...")
+    for file_id in files:
+        file = files[file_id]
+        if (check_file_complete(file_id)):
+            sorted_downloadable_files.append(file_id)
+            file_worker_counts[file_id] = 0
+    print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
+except Exception as e:
+    print("NOTE: Could not load previous file state:")
+    print(e)
+    save_files()

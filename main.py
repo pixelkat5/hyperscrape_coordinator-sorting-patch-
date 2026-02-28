@@ -1,10 +1,16 @@
+import os
 from uuid import uuid4
 from files import HyperscrapeFile
 import state
 from flask import Flask, request
+import hashlib
 
 from helpers import get_auth_token, get_request_ip, get_worker
 
+print("=========================")
+print("=  HYPERSCRAPE SERVER   =")
+print("= Created By Hackerdude =")
+print("=========================")
 
 app = Flask(__name__)
 
@@ -42,35 +48,23 @@ def get_chunks():
     if (not worker):
         return {"error": "Invalid token!"}, 403
     
-    if (len(state.receivers) == 0):
-        return {} # No receiver can ingest this!
-    
-    # Get top 10 files
-    top_files = state.sorted_downloadable_files[:10]
-    top_receivers = {}
-    for file_id in top_files:
-        if (state.files[file_id].receiver == None):
-            continue
-        top_receivers[state.files[file_id].receiver] = top_receivers.get(state.files[file_id].receiver, 0) + 1
-
-    ideal_receiver = list(state.receivers.keys())[0]
-    if (len(top_receivers) != 0):
-        sorted_receivers = sorted(list(top_receivers.keys()), key=lambda el: top_receivers[el])
-        ideal_receiver = sorted_receivers[0] # Get receiver with least use
-
-    chunks_to_get = request.args.get("n", worker.max_download/worker.max_per_file_speed)
+    chunks_to_get = int(request.args.get("n", worker.max_download/worker.max_per_file_speed))
     # Get files with high worker counts
     # So the entire network is working together for a single file essenially
     chunks_to_download = []
     file_download_candidate_offset = 0
-    while chunks_to_download < chunks_to_get and file_download_candidate_offset + chunks_to_get < len(state.sorted_downloadable_files):
+    while len(chunks_to_download) < chunks_to_get and file_download_candidate_offset < len(state.sorted_downloadable_files):
         files_to_download_candidates = state.sorted_downloadable_files[file_download_candidate_offset:file_download_candidate_offset+chunks_to_get]
         for file_id in files_to_download_candidates:
             for chunk_id in state.files[file_id].chunks:
-                # Get the chunk in this file with the lowest number of downloaders under checksum_verify
+                state.chunks[chunk_id].cleanup_workers() # Cleanup workers that have not uploaded in a while
+                # Get the chunk in this file with the lowest number of downloaders under trust_count
                 if (len(state.chunks[chunk_id].worker_status) >= state.config["general"]["trust_count"]):
                     continue
+                if (worker.worker_id in state.chunks[chunk_id].worker_status and not state.chunks[chunk_id].worker_status[worker.worker_id].complete):
+                    break # If worker is CURRENTLY downloading a chunk in this file we don't use this file at all! - Otherwise Myriant will reduce speeds for BOTH chunks
                 chunks_to_download.append(chunk_id)
+                break # Only one chunk per file!
 
     ###
     # We now have a list of chunks to download
@@ -79,16 +73,13 @@ def get_chunks():
     for chunk_id in chunks_to_download:
         chunk = state.chunks[chunk_id]
         file = state.files[state.chunk_to_file[chunk_id]]
-        if (file.receiver == None): # If no receiver is set for this file, we pick one
-            file.receiver = ideal_receiver
         state.assigned_chunks.assign_chunk(worker.worker_id, chunk_id)
         response[chunk_id] = {
             "url": file.url,
             "range": [
                 chunk.start,
                 chunk.end
-            ],
-            "destination": state.files[state.chunk_to_file[chunk_id]].destination
+            ]
         }
     return response
 
@@ -97,26 +88,124 @@ def put_status():
     worker = get_worker()
     if (not worker):
         return {"error": "Invalid token!"}, 403
+    if (not worker in state.chunks[chunk_id].worker_status):
+        return {"error": "Chunk not requested"}, 400
     data = request.json
     for chunk_id in data:
-        state.chunks[chunk_id].worker_status[worker.worker_id].downloaded = data[chunk_id]["dowloaded"]
-        state.chunks[chunk_id].worker_status[worker.worker_id].uploaded = data[chunk_id]["uploaded"]
+        chunk = state.chunks[chunk_id]
+        chunk.worker_status[worker.worker_id].downloaded = data[chunk_id]["dowloaded"]
+        chunk.worker_status[worker.worker_id].mark_updated()
 
 
-##@app.route("/receivers", methods=['POST'])
-##def register_receiver():
-##    if (not get_auth_token() in state.config["general"]["receiver_api_keys"]):
-##        return {"error": "Invalid token!"}, 403
-##    
-##    data = request.json
-##    if ((not "url" in data) or 
-##        (not "max_upload" in data) or 
-##        (not "receiver_token" in data) or 
-##        (not "hostname" in data)):
-##        return {"error": "Invalid request"}, 400
-##    
-##    state.add_receiver
+@app.route("/upload", methods=["PUT"])
+def upload_file():
+    worker = get_worker()
+    if (not worker):
+        return {"error": "Invalid token!"}, 403
+    chunk_id = request.args.get("chunk_id", None)
+    file_id = request.args.get("file_id", None)
 
+    if (chunk_id != None):
+        # Ensure the chunk exists
+        if (not chunk_id in state.chunks):
+            return {"error": "Unknown chunk"}, 400
+        if (not worker.worker_id in state.chunks[chunk_id].worker_status):
+            return {"error": "Chunk not requested"}, 400
+        chunk = state.chunks[chunk_id]
+        if (chunk.complete >= state.config["general"]["trust_count"]):
+            return {"error": "Chunk already complete!"}, 409
+        # Handle chunk uploading
+        chunk_file = state.files[state.chunk_to_file[chunk_id]]
+        storage_path = os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{worker_id}.bin")
+        with open(storage_path, "wb") as file:
+            chunk_hash = hashlib.md5()
+            chunk.worker_status[worker.worker_id].uploaded = 0
+            stream_data = request.stream.read()
+            while (len(stream_data) > 0):
+                chunk.worker_status[worker.worker_id].uploaded += len(stream_data)
+                chunk.worker_status[worker.worker_id].mark_updated()
+                file.write(stream_data)
+                chunk_hash.update(stream_data)
+                stream_data = request.stream.read()
+        chunk.worker_status[worker.worker_id].mark_complete(chunk_hash.hexdigest()) # This chunk is now complete
+
+        # Check that this hash matches the others that are complete
+        chunk_hashes = {}
+        for worker_id in chunk.worker_status:
+            if (worker_id == worker.worker_id):
+                continue # it's us lol
+
+            worker_status = chunk.worker_status[worker_id]
+            if (not worker_status.complete):
+                continue
+            chunk_hashes[worker_status.hash] = chunk_hashes.get(worker_status.hash, 0) + 1
+
+        if (len(chunk_hashes) > 1): # There are mismatched hashes!
+            most_popular_hash = None
+            for hash in chunk_hashes:
+                if (most_popular_hash == None or chunk_hashes[most_popular_hash] < chunk_hashes[hash]):
+                    most_popular_hash = hash
+            for worker_id in list(chunk.worker_status.keys()):
+                worker_status = chunk.worker_status[worker_id]
+                if (not worker_status.complete):
+                    continue
+                if (worker_status.hash != most_popular_hash):
+                    # Delete mismatched workers from chunk stuff
+                    state.assigned_chunks.remove_worker(worker_id)
+                    os.remove(os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{worker_id}.bin")) # Remove the chunk this worker downloaded
+            return {"ok": "ok"}, 200 # We've processed the upload from the client, don't come back regardless of what happened
+        
+        # If the hashes weren't mismatched...
+        if (len(chunk.worker_status) < state.config["general"]["trust_count"]): # Check that we have all the chunks responses we need
+            return {"ok", "ok"}, 200
+        for worker_id in chunk.worker_status: # Check that they're all complete
+            worker_status = chunk.worker_status[worker_id]
+            if (not worker_status.complete):
+                return {"ok", "ok"}, 200 # If any of the workers aren't complete we just skip this
+        
+        # So all the hashes are good
+        # AND we have responses that are complete for every response for this chunk?
+        # We can merge the chunks
+        worker_ids = list(chunk.worker_status)
+        for worker_id in worker_ids[1:]: # Delete all but 1
+            os.remove(os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{worker_id}.bin"))
+        os.rename(os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{worker_ids[0]}.bin"), os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{chunk.start}.bin"))
+
+        # Check if the whole file is complete
+        if (not state.check_file_complete(chunk_file.file_id)):
+            return {"ok": "ok"}, 200 # We're not yet done with the whole file despite being doen with this chunk!
+        # If we are done though, then we should construct and move the entire file
+        chunk_files = []
+        for chunk_id in chunk_file.chunks:
+            chunk = state.chunks[chunk_id]
+            chunk_files.append(os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file.file_path, f"chunk_{chunk.start}.bin"))
+        chunk_files.sort() # Should sort in ascending order
+
+        # Now we construct the final file!
+        md5_hash = hashlib.md5()
+        sha1_hash = hashlib.sha1()
+        sha256_hash = hashlib.sha256()
+        with open(os.path.join(state.config["paths"]["storage_path"], chunk_file.file_path), 'wb') as main_file:
+            for chunk_file_path in chunk_files:
+                with open(chunk_file_path, 'rb') as chunk_file:
+                    read_size = 1024**2 * 10
+                    data = chunk_file.read(read_size) # Read 10MB at a time
+                    while (len(data) > 0):
+                        main_file.write(data)
+                        md5_hash.update(data)
+                        sha1_hash.update(data)
+                        sha256_hash.update(data)
+                        data = chunk_file.read(read_size)
+                os.remove(chunk_file_path)
+        # write hashes to file
+        state.file_hashes[chunk_file.file_path] = {
+            "md5": md5_hash.hexdigest(),
+            "sha1": sha1_hash.hexdigest(),
+            "sha256": sha256_hash.hexdigest()
+        }
+        state.save_file_hashes()
+        
+        return {"ok": "ok"}, 200
 
 ###
 # FOR DEBUGGING ONLY!!!!
