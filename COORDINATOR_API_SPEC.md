@@ -1,16 +1,17 @@
-# For Workers
-## POST `/register`
+## POST `/worker`
 Registers a worker with the coordinator
 
 ### Request
 ```json
 {
     "max_upload": 100,
-    "max_download": 100
+    "max_download": 100,
+    "threads": 8
 }
 ```
 - `max_upload` - max upload speed in mbps
 - `max_download` - max download speed in mbps
+- `threads` - the number of available threads
 
 ### Response
 ```json
@@ -19,10 +20,8 @@ Registers a worker with the coordinator
 }
 ```
 
-## GET `/get_jobs?n=10`
-Gets jobs for the worker to execute concurrently
-### Request
-- `n` - the number of jobs to get
+## GET `/chunks`
+Gets chunks for the worker to download concurrently
 
 ### Request Headers
 - `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register`
@@ -31,33 +30,31 @@ Gets jobs for the worker to execute concurrently
 ```json
 [
     {
-        "job_id": "9b38d89a-f7b5-4676-af33-d2c54f16fa50",
+        "chunks_id": "9b38d89a-f7b5-4676-af33-d2c54f16fa50",
         "url": "https://myrient.erista.me/files/No-Intro/Ouya%20-%20Ouya/iMech%20Online%20%28World%29%20%28v1.2.05%29.zip",
         "range": [0, 242422],
         "destination": "https://uploader.hackerdude.tech/upload"
     }
 ]
 ```
-- Array of `job` objects
-    - `job_id` a uuid to represent the job
+- Array of `chunk` objects
+    - `chunk_id` a uuid to represent the chunk
     - `url` is the target URL to download
     - `range` is the target section of data to download [inclusive, exclusive]
     - `destination` is the URL to the uploaded to upload files to (see `hyperscrape_reciever`)
+
 
 ## PUT `/status`
 ### Request
 ```json
 {
-    "current_progress":
-    {
-        "9b38d89a-f7b5-4676-af33-d2c54f16fa50": {
-            "downloaded": 100345,
-            "uploaded": 0
-        }
+    "9b38d89a-f7b5-4676-af33-d2c54f16fa50": {
+        "downloaded": 100345,
+        "uploaded": 0
     }
 }
 ```
-- `current_progress` is a JSON array with the current jobs and their progress, the numbers are measured in bytes
+- `current_progress` is a JSON array with the current chunks and their progress, the numbers are measured in bytes
 
 ### Request Headers
 - `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register`
@@ -86,8 +83,8 @@ Registers a reciever with the coordinator
 }
 ```
 
-## GET `/get_jobs`
-Get all jobs
+## GET `/files`
+Get all files currently handled by this reciever
 
 ### Request Headers
 - `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register`
@@ -95,40 +92,61 @@ Get all jobs
 ### Response
 ```json
 {
-    "9b38d89a-f7b5-4676-af33-d2c54f16fa50": {
+    [
+        "file_uuid": "bf1ad24f-a0df-4dd2-ba56-e732a6c7d0f9",
         "file_path": "/No-Intro/wjhatever",
         "total_size": 34323,
         "url": "https://myrient.erista.me/files/No-Intro/Ouya%20-%20Ouya/iMech%20Online%20%28World%29%20%28v1.2.05%29.zip",
-        "range": [0, 242422]
-    }
+        "chunks": {
+            "9b38d89a-f7b5-4676-af33-d2c54f16fa50": [0, 242422]
+        }
+    ]
 }
 ```
-- Returns a map of job IDs to their info
-- NOTE: Only returns jobs assigned to this reciever
+- Returns a map of chunk IDs to their info
+- NOTE: Only returns chunks assigned to this reciever
 
 ## GET `/worker_info?token=TOKEN`
-Get a worker info from a token
+Get a worker's info from a token
 
 ### Request Headers
 - `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register_worker`
 
 ### Request
-- `JOB_ID` - The ID of the job to get file info for
+- `TOKEN` - The worker's token
 
 ### Response
 ```json
 {
     "max_upload": 100,
     "max_download": 100,
-    "jobs": [ "9b38d89a-f7b5-4676-af33-d2c54f16fa50" ]
+    "threads": 8,
+    "status": {
+        "9b38d89a-f7b5-4676-af33-d2c54f16fa50": {
+            "downloaded": 100345,
+            "uploaded": 0
+        }
+    }
 }
 ```
-- `max_upload` - The recorded max upload of this worker
-- `max_download` - The recorded max download of this worker
-- `jobs` - A list of job UUIDs assigned to thei worker
 
-## GET `/ping`
-Tell the coordinator this reciever is still alive
+## PUT `/status`
+Tell the coordinator this reciever is still alive and also uploads some basic data
+
+### Request
+```json
+{
+    "bf1ad24f-a0df-4dd2-ba56-e732a6c7d0f9":
+    {
+        "uploaded": 0,
+        "chunks": {
+            "9b38d89a-f7b5-4676-af33-d2c54f16fa50": false
+        }
+    }
+}
+```
+- Tells the coordinator how much of each file has been uploaded
+- Also tells the coordinator whether each chunk is recieved or not
 
 ### Request Headers
 - `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register_worker`
