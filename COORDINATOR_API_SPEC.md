@@ -126,3 +126,12 @@ Get a worker info from a token
 - `max_upload` - The recorded max upload of this worker
 - `max_download` - The recorded max download of this worker
 - `jobs` - A list of job UUIDs assigned to thei worker
+
+## GET `/ping`
+Tell the coordinator this reciever is still alive
+
+### Request Headers
+- `authorization` - Set to `Bearer TOKEN` where `TOKEN` is the recieved response from `/register_worker`
+
+### Response
+returns no content, 200
