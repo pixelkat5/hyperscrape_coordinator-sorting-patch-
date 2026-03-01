@@ -253,11 +253,11 @@ state.chunk_to_file = {}
 state.sorted_downloadable_files = []
 state.file_worker_counts = {}
 test_urls = [
-#    ("https://myrient.erista.me/files/No-Intro/ACT%20-%20Apricot%20PC%20Xi/%5BBIOS%5D%20MS-DOS%202.11%20%28Europe%29%20%28v3.1%29%20%28Disk%201%29%20%28OS%29.zip", "[BIOS] MS-DOS 2.11 (Europe) (v3.1) (Disk 1) (OS).zip"),
-#    ("https://myrient.coffee/files/Nintendo%203DS%20(CIA)%20(2019-01-05)/7th%20Dragon%20III%20Code%20-%20VFD%20(Europe).cia", "7thdragon.cia"),
+    ("https://myrient.erista.me/files/No-Intro/ACT%20-%20Apricot%20PC%20Xi/%5BBIOS%5D%20MS-DOS%202.11%20%28Europe%29%20%28v3.1%29%20%28Disk%201%29%20%28OS%29.zip", "[BIOS] MS-DOS 2.11 (Europe) (v3.1) (Disk 1) (OS).zip"),
+    ("https://myrient.coffee/files/Nintendo%203DS%20(CIA)%20(2019-01-05)/7th%20Dragon%20III%20Code%20-%20VFD%20(Europe).cia", "7thdragon.cia"),
     ("https://myrient.coffee/files/Nintendo%203DS%20(CIA)%20(2019-01-05)/Deer%20Drive%20Legends%20(USA)%20(En,Fr,Es).cia", "deer drive.cia"),
-#    ("https://myrient.erista.me/files/Redump/Pocket%20PC/CoPilot%20Live%20-%20Pocket%20PC%204%20%28Europe%29%20%28En%2CFr%2CDe%2CEs%29%20%28Install%20Disc%20-%20Europe%29.zip", "copilot.zip"),
-#    ("https://www.hackerdude.tech/vault/805653383-%e5%9b%9b%e8%b6%b3%e6%9c%ba%e5%99%a8%e4%ba%baSpot%e5%bd%bb%e5%ba%95%e6%8b%86%e8%a7%a3%e6%8a%a5%e5%91%8a.pdf", "805653383-四足机器人Spot彻底拆解报告.pdf")
+    ("https://myrient.erista.me/files/Redump/Pocket%20PC/CoPilot%20Live%20-%20Pocket%20PC%204%20%28Europe%29%20%28En%2CFr%2CDe%2CEs%29%20%28Install%20Disc%20-%20Europe%29.zip", "copilot.zip"),
+    ("https://www.hackerdude.tech/vault/805653383-%e5%9b%9b%e8%b6%b3%e6%9c%ba%e5%99%a8%e4%ba%baSpot%e5%bd%bb%e5%ba%95%e6%8b%86%e8%a7%a3%e6%8a%a5%e5%91%8a.pdf", "805653383-四足机器人Spot彻底拆解报告.pdf")
 ]
 for test_url in test_urls:
     state.add_file(HyperscrapeFile(

@@ -53,11 +53,16 @@ Gets chunks for the worker to download concurrently
 ```json
 {
     "9b38d89a-f7b5-4676-af33-d2c54f16fa50": {
-        "downloaded": 100345,
-        "uploaded": 0
+        "downloaded": 100345
     }
 }
 ```
+
+Tell the coordinator how much this worker has downloaded so far  
+
+### Note
+- `/status` **MUST** be called at an interval lower than the configured coordinator timeout interval.
+- `/status` **MUST** be called once before sending the file to `/upload`
 
 ## PUT `/upload?chunk_id=CHUNK_ID`
 Uploads a file from a worker for `CHUNK_ID`
