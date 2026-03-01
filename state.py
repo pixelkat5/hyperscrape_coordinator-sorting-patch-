@@ -147,12 +147,12 @@ def unban_ip(ip: str):
 
 ###
 # Chunks
-def cleanup_chunk_workers(chunk_id, timeout=30):
+def cleanup_chunk_workers(chunk_id):
     chunk = chunks[chunk_id]
     for worker_id in list(chunk.worker_status.keys()):
         if (
             (not worker_id in workers) or
-            ((not chunk.worker_status[worker_id].complete) and time.time() - chunk.worker_status[worker_id].last_updated > timeout)
+            ((not chunk.worker_status[worker_id].complete) and time.time() - chunk.worker_status[worker_id].last_updated > config["general"]["worker_timeout"])
         ):
             del chunk.worker_status[worker_id]
 
