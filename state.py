@@ -11,6 +11,8 @@ from msgspec import json
 import pickle
 import tomllib
 
+USER_AGENT = f"HyperscrapeServer/v1 (Created by Hackerdude for Minerva)"
+
 global banned_ips
 banned_ips = []
 try:

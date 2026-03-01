@@ -1,3 +1,4 @@
+import requests
 from auth_token import AuthToken
 import state
 from flask import request
@@ -32,3 +33,11 @@ def get_worker() -> Worker|None:
     if (worker.auth_nonce != token.nonce):
         return None
     return worker
+
+def get_url_size(url: str):
+    try:
+        return int(requests.head(url, headers={
+            "User-Agent": state.USER_AGENT
+        }, allow_redirects=True).headers.get("Content-Length", None))
+    except:
+        return None

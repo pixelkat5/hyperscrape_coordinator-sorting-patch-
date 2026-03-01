@@ -5,7 +5,7 @@ import state
 from flask import Flask, request
 import hashlib
 
-from helpers import get_auth_token, get_request_ip, get_worker
+from helpers import get_auth_token, get_request_ip, get_url_size, get_worker
 
 print("=========================")
 print("=  HYPERSCRAPE SERVER   =")
@@ -23,9 +23,9 @@ def register_worker():
     ip = get_request_ip()
     if (ip in state.banned_ips):
         return {"error": "Could not connect to worker"}, 403
-    for worker_id in list(state.workers.keys()):
-        if (state.workers[worker_id].ip == ip):
-            state.remove_worker(worker_id)
+    #for worker_id in list(state.workers.keys()):
+    #    if (state.workers[worker_id].ip == ip):
+    #        state.remove_worker(worker_id)
     data = request.json
     if (data == None or
         (not "version" in data) or
@@ -67,14 +67,17 @@ def get_chunks():
             if (downloading_file_already):
                 continue
 
+            highest_chunk_id = None
             for chunk_id in state.files[file_id].chunks:
-                # Get the chunk in this file with the lowest number of downloaders under trust_count
+                # Get the chunk in this file with the highest number of downloaders under trust_count
                 if (len(state.chunks[chunk_id].worker_status) >= state.config["general"]["trust_count"]):
                     continue
                 if (worker.worker_id in state.chunks[chunk_id].worker_status):
                     continue # If worker has already downloaded THIS chunk then we skip it from candidates
+                if (len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
+                    highest_chunk_id = chunk_id
+            if (highest_chunk_id != None):
                 chunks_to_download.append(chunk_id)
-                break # Only one chunk per file!
         file_download_candidate_offset += chunks_to_get
 
     ###
@@ -99,14 +102,22 @@ def put_status():
     worker = get_worker()
     if (not worker):
         return {"error": "Invalid token!"}, 403
-    if (not worker in state.chunks[chunk_id].worker_status):
-        return {"error": "Chunk not requested"}, 400
     data = request.json
     for chunk_id in data:
+        if (not worker.worker_id in state.chunks[chunk_id].worker_status):
+            continue
         chunk = state.chunks[chunk_id]
         worker_status = chunk.worker_status[worker.worker_id]
-        worker_status.downloaded = data[chunk_id]["dowloaded"]
+        worker_status.downloaded = data[chunk_id]["downloaded"]
         worker_status.mark_updated()
+    return {"ok": "ok"}, 200
+
+@app.route("/ping", methods=['GET'])
+def still_alive():
+    worker = get_worker()
+    if (not worker):
+        return {"error": "Invalid token!"}, 403
+    worker.update_last_seen()
 
 
 @app.route("/upload", methods=["PUT"])
@@ -123,6 +134,9 @@ def upload_file():
             return {"error": "Unknown chunk"}, 400
         if (not worker.worker_id in state.chunks[chunk_id].worker_status):
             return {"error": "Chunk not requested"}, 400
+        if (state.chunks[chunk_id].worker_status[worker.worker_id].complete):
+            return {"error": "Chunk already complete"}, 400
+
         chunk = state.chunks[chunk_id]
         worker_status = state.chunks[chunk_id].worker_status[worker.worker_id]
         # Handle chunk uploading
@@ -140,7 +154,10 @@ def upload_file():
                 file.write(stream_data)
                 chunk_hash.update(stream_data)
                 stream_data = request.stream.read()
-        worker_status.mark_complete(chunk_hash.hexdigest()) # This chunk is now complete
+        if (os.path.exists(storage_path) and os.stat(storage_path).st_size == worker_status.downloaded):
+            worker_status.mark_complete(chunk_hash.hexdigest()) # This chunk is now complete
+        else:
+            return {"error": "Error processing chunk"}, 500
 
         # Check that this hash matches the others that are complete
         chunk_hashes = {}
@@ -181,7 +198,7 @@ def upload_file():
         # We can remove the other chunks and just keep ours
         worker_ids = list(chunk.worker_status)
         for worker_id in worker_ids[1:]: # Delete all but 1
-            os.remove(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_id}.bin")
+            os.remove(os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_id}.bin"))
         os.rename(os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_ids[0]}.bin"), os.path.join(temp_storage_folder, f"chunk_{chunk.start}.bin"))
 
         # Check if the whole file is complete
@@ -192,7 +209,6 @@ def upload_file():
         for chunk_id in chunk_file_object.chunks:
             chunk = state.chunks[chunk_id]
             chunk_files.append(os.path.join(temp_storage_folder, f"chunk_{chunk.start}.bin"))
-        chunk_files.sort() # Should sort in ascending order
 
         # Now we construct the final file!
         md5_hash = hashlib.md5()
@@ -232,13 +248,20 @@ state.chunks = {}
 state.chunk_to_file = {}
 state.sorted_downloadable_files = []
 state.file_worker_counts = {}
-state.add_file(HyperscrapeFile(
-    str(uuid4()),
-    "./test/test.txt",
-    156437,
-    "https://myrient.erista.me/files/No-Intro/ACT%20-%20Apricot%20PC%20Xi/%5BBIOS%5D%20MS-DOS%202.11%20%28Europe%29%20%28v3.1%29%20%28Disk%201%29%20%28OS%29.zip",
-    (1024*1024)*2
-))
+test_urls = [
+#    ("https://file-examples.com/storage/fe3c7a89a169a3cde95f28c/2017/04/file_example_MP4_1920_18MG.mp4", "file_example_MP4_1920_18MG.mp4"),
+#    ("https://file-examples.com/storage/fe3c7a89a169a3cde95f28c/2017/04/file_example_MP4_480_1_5MG.mp4", "file_example_MP4_480_1_5MG.mp4"),
+    ("https://myrient.erista.me/files/No-Intro/ACT%20-%20Apricot%20PC%20Xi/%5BBIOS%5D%20MS-DOS%202.11%20%28Europe%29%20%28v3.1%29%20%28Disk%201%29%20%28OS%29.zip", "[BIOS] MS-DOS 2.11 (Europe) (v3.1) (Disk 1) (OS).zip"),
+    ("https://www.hackerdude.tech/vault/805653383-%e5%9b%9b%e8%b6%b3%e6%9c%ba%e5%99%a8%e4%ba%baSpot%e5%bd%bb%e5%ba%95%e6%8b%86%e8%a7%a3%e6%8a%a5%e5%91%8a.pdf", "805653383-四足机器人Spot彻底拆解报告.pdf")
+]
+for test_url in test_urls:
+    state.add_file(HyperscrapeFile(
+        str(uuid4()),
+        test_url[1],
+        get_url_size(test_url[0]),
+        test_url[0],
+        (1024*1024)*2
+    ))
 
 if __name__ == "__main__":
     from waitress import serve
