@@ -51,57 +51,55 @@ def get_chunks():
     if (not worker):
         return {"error": "Invalid token!"}, 403
     
-    chunks_to_get = int(request.args.get("n", worker.max_download/worker.max_per_file_speed))
+    num_chunks_to_get = int(request.args.get("n", worker.max_download/worker.max_per_file_speed))
     # Get files with high worker counts
     # So the entire network is working together for a single file essenially
     chunks_to_download = []
     chunk_to_file = {}
-    file_download_candidate_offset = 0
-    while len(chunks_to_download) < chunks_to_get and file_download_candidate_offset < len(state.sorted_downloadable_files):
-        files_to_download_candidates = state.sorted_downloadable_files[file_download_candidate_offset:file_download_candidate_offset+chunks_to_get]
-        for file_id in files_to_download_candidates:
-            downloading_file_already = False
+    for file_id in state.sorted_downloadable_files:
+        if (len(chunks_to_download) == num_chunks_to_get):
+            break
+        downloading_file_already = False
 
-            # If the file doesn't have a total size then we need to do that!
-            file = state.files[file_id]
-            if (file.total_size == None):
-                file.total_size = get_url_size(file.url)
+        # If the file doesn't have a total size then we need to do that!
+        file = state.files[file_id]
+        if (file.total_size == None):
+            file.total_size = get_url_size(file.url)
 
-            # If the file hasn't generated chunks then we need to do that!
-            if (len(file.chunks) == 0):
-                current_size = 0
-                while current_size < file.total_size:
-                    start = current_size
-                    end = min(current_size + file.chunk_size, file.total_size)
-                    chunk_id = str(uuid4())
-                    state.chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
-                    file.chunks.append(chunk_id)
-                    current_size = end
-            
-            # Ensure the worker isn't currently downloading this file
-            for chunk_id in file.chunks:
-                # Cleanup workers that have not uploaded in a while
-                state.cleanup_chunk_workers(chunk_id)
-                if (worker.worker_id in state.chunks[chunk_id].worker_status and not state.chunks[chunk_id].worker_status[worker.worker_id].complete):
-                    downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
-                    break
-            
-            if (downloading_file_already):
+        # If the file hasn't generated chunks then we need to do that!
+        if (len(file.chunks) == 0):
+            current_size = 0
+            while current_size < file.total_size:
+                start = current_size
+                end = min(current_size + file.chunk_size, file.total_size)
+                chunk_id = str(uuid4())
+                state.chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
+                file.chunks.append(chunk_id)
+                current_size = end
+        
+        # Ensure the worker isn't currently downloading this file
+        for chunk_id in file.chunks:
+            # Cleanup workers that have not uploaded in a while
+            state.cleanup_chunk_workers(chunk_id)
+            if (worker.worker_id in state.chunks[chunk_id].worker_status and not state.chunks[chunk_id].worker_status[worker.worker_id].complete):
+                downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
+                break
+        
+        if (downloading_file_already):
+            continue
+
+        highest_chunk_id = None
+        for chunk_id in file.chunks:
+            # Get the chunk in this file with the highest number of downloaders under trust_count
+            if (len(state.chunks[chunk_id].worker_status) >= state.config["general"]["trust_count"]):
                 continue
-
-            highest_chunk_id = None
-            for chunk_id in file.chunks:
-                # Get the chunk in this file with the highest number of downloaders under trust_count
-                if (len(state.chunks[chunk_id].worker_status) >= state.config["general"]["trust_count"]):
-                    continue
-                if (worker.worker_id in state.chunks[chunk_id].worker_status):
-                    continue # If worker has already downloaded THIS chunk then we skip it from candidates
-                if (highest_chunk_id == None or len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
-                    highest_chunk_id = chunk_id
-            if (highest_chunk_id != None):
-                chunk_to_file[highest_chunk_id] = file_id
-                chunks_to_download.append(highest_chunk_id)
-        file_download_candidate_offset += chunks_to_get
+            if (worker.worker_id in state.chunks[chunk_id].worker_status):
+                continue # If worker has already downloaded THIS chunk then we skip it from candidates
+            if (highest_chunk_id == None or len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
+                highest_chunk_id = chunk_id
+        if (highest_chunk_id != None):
+            chunk_to_file[highest_chunk_id] = file_id
+            chunks_to_download.append(highest_chunk_id)
 
     ###
     # We now have a list of chunks to download
@@ -128,6 +126,8 @@ def put_status():
         return {"error": "Invalid token!"}, 403
     data = request.json
     for chunk_id in data:
+        if (not chunk_id in state.chunks):
+            continue
         if (not worker.worker_id in state.chunks[chunk_id].worker_status):
             continue
         chunk = state.chunks[chunk_id]
