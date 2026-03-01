@@ -286,8 +286,9 @@ def upload_file():
         chunk_file_object.complete = True # Mark file as actually complete
         for chunk_id in chunk_file_object.chunks:
             del state.chunks[chunk_id] # Delete chunks as they will not be read again
-        state.save_data_files()
+        chunk_file_object.chunks = [] # Clean clean clean!
         state.sorted_downloadable_files.remove(chunk_file_object.file_id) # We don't want to download this again
+        state.save_data_files()
         
         return {"ok": "Upload entire file complete!"}, 200
 
