@@ -2,6 +2,7 @@
 # State vars
 ###
 import os
+import time
 from uuid import uuid4
 from auth_token import AuthToken
 from console import Console
@@ -28,7 +29,6 @@ global workers
 global files
 global chunks
 global chunk_to_file
-global assigned_chunks
 global file_chunk_count
 global file_worker_count
 global sorted_files
@@ -65,34 +65,6 @@ def save_files():
     save_file_state()
     save_file_hashes()
 ###
-
-class AssignedChunks():
-    def __init__(self):
-        self._assigned_chunks: dict[str, list[str]] = {} # Each worker has multiple chunks _assigned_chunks[worker_id] = [chunk_id, chunk_id, chunk_id]
-    
-    def assign_chunk(self, worker_id, chunk_id):
-        if (not worker_id in self._assigned_chunks):
-            self._assigned_chunks[worker_id] = []
-        self._assigned_chunks[worker_id].append(chunk_id)
-        chunks[chunk_id].worker_status[worker_id] = WorkerStatus(0, 0)
-    
-    def unassign_chunk(self, worker_id, chunk_id):
-        chunk = chunks[chunk_id]
-        if (worker_id in chunk.worker_status):
-            del chunk.worker_status[worker_id]
-        # Fix file ordering
-        file_id = chunk_to_file[chunk_id]
-        file_worker_counts[file_id] -= 1
-        if (file_id in sorted_downloadable_files):
-            reorder_file_workers(file_id)
-        self._assigned_chunks[worker_id].remove(chunk_id)
-
-    def remove_worker(self, worker_id):
-        if (worker_id in self._assigned_chunks):
-            for chunk_id in self._assigned_chunks[worker_id]:
-                self.unassign_chunk(worker_id, chunk_id)
-            del self._assigned_chunks[worker_id]
-assigned_chunks: AssignedChunks = AssignedChunks()
 
 global config
 config = None
@@ -135,8 +107,6 @@ def reorder_file_workers(file_id):
 
 # Workers
 def remove_worker(worker_id: str):
-    # Remove status data
-    assigned_chunks.remove_worker(worker_id)
     del workers[worker_id] # Delete the worker
 
 def add_worker(ip: str, max_upload: int, max_download: int, max_per_file_speed: int, threads: int):
@@ -149,7 +119,9 @@ def add_worker(ip: str, max_upload: int, max_download: int, max_per_file_speed: 
 # File helper
 def check_file_complete(file_id: str):
     for chunk_id in files[file_id].chunks:
-        if (len(chunks[chunk_id].worker_status) == 0):
+        cleanup_chunk_workers(chunk_id)
+        worker_status_count = len(chunks[chunk_id].worker_status)
+        if (worker_status_count == 0 or worker_status_count < config["general"]["trust_count"]):
             return False
         for worker_id in chunks[chunk_id].worker_status:
             if (not chunks[chunk_id].worker_status[worker_id].complete):
@@ -173,6 +145,16 @@ def unban_ip(ip: str):
         banned_ips.remove(ip)
         write_banned_ips()
 
+###
+# Chunks
+def cleanup_chunk_workers(chunk_id, timeout=30):
+    chunk = chunks[chunk_id]
+    for worker_id in list(chunk.worker_status.keys()):
+        if (
+            (not worker_id in workers) or
+            ((not chunk.worker_status[worker_id].complete) and time.time() - chunk.worker_status[worker_id].last_updated > timeout)
+        ):
+            del chunk.worker_status[worker_id]
 
 
 try:

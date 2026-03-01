@@ -1,6 +1,6 @@
 import os
 from uuid import uuid4
-from files import HyperscrapeFile
+from files import HyperscrapeFile, WorkerStatus
 import state
 from flask import Flask, request
 import hashlib
@@ -59,7 +59,8 @@ def get_chunks():
             downloading_file_already = False
             # Ensure the worker isn't currently downloading this file
             for chunk_id in state.files[file_id].chunks:
-                state.chunks[chunk_id].cleanup_workers() # Cleanup workers that have not uploaded in a while
+                # Cleanup workers that have not uploaded in a while
+                state.cleanup_chunk_workers(chunk_id)
                 if (worker.worker_id in state.chunks[chunk_id].worker_status and not state.chunks[chunk_id].worker_status[worker.worker_id].complete):
                     downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
                     break
@@ -74,10 +75,10 @@ def get_chunks():
                     continue
                 if (worker.worker_id in state.chunks[chunk_id].worker_status):
                     continue # If worker has already downloaded THIS chunk then we skip it from candidates
-                if (len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
+                if (highest_chunk_id == None or len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
                     highest_chunk_id = chunk_id
             if (highest_chunk_id != None):
-                chunks_to_download.append(chunk_id)
+                chunks_to_download.append(highest_chunk_id)
         file_download_candidate_offset += chunks_to_get
 
     ###
@@ -87,7 +88,7 @@ def get_chunks():
     for chunk_id in chunks_to_download:
         chunk = state.chunks[chunk_id]
         file = state.files[state.chunk_to_file[chunk_id]]
-        state.assigned_chunks.assign_chunk(worker.worker_id, chunk_id)
+        state.chunks[chunk_id].worker_status[worker.worker_id] = WorkerStatus()
         response[chunk_id] = {
             "url": file.url,
             "range": [
@@ -138,7 +139,7 @@ def upload_file():
             return {"error": "Chunk already complete"}, 400
 
         chunk = state.chunks[chunk_id]
-        worker_status = state.chunks[chunk_id].worker_status[worker.worker_id]
+        worker_status = chunk.worker_status[worker.worker_id]
         # Handle chunk uploading
         chunk_file_object = state.files[state.chunk_to_file[chunk_id]]
         temp_storage_folder = os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file_object.file_path)
@@ -157,6 +158,9 @@ def upload_file():
         if (os.path.exists(storage_path) and os.stat(storage_path).st_size == worker_status.downloaded):
             worker_status.mark_complete(chunk_hash.hexdigest()) # This chunk is now complete
         else:
+            if (os.path.exists(storage_path)):
+                os.remove(storage_path)
+            del chunk.worker_status[worker.worker_id]
             return {"error": "Error processing chunk"}, 500
 
         # Check that this hash matches the others that are complete
@@ -181,7 +185,7 @@ def upload_file():
                     continue
                 if (worker_status.hash != most_popular_hash):
                     # Delete mismatched workers from chunk stuff
-                    state.assigned_chunks.remove_worker(worker_id)
+                    del chunk.worker_status[worker_id]
                     os.remove(os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_id}.bin")) # Remove the chunk this worker downloaded
             return {"result": "Upload had a mismatched hash, you can ignore this"}, 200 # We've processed the upload from the client, don't come back regardless of what happened
         
@@ -267,4 +271,4 @@ if __name__ == "__main__":
     from waitress import serve
     state.console.print(f'Listening on {state.config["server"]["port"]}')
     state.console.start()
-    serve(app, host="0.0.0.0", port=state.config["server"]["port"], threads=state.config["server"]["threads"])
+    serve(app, host="0.0.0.0", port=state.config["server"]["port"], threads=state.config["server"]["threads"], backlog=4096)

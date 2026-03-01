@@ -1,7 +1,7 @@
 import time
 
 class WorkerStatus():
-    def __init__(self, downloaded: int, uploaded: int):
+    def __init__(self, downloaded: int = 0, uploaded: int = 0):
         self.started: int = time.time()
         self.last_updated: int = time.time()
         self.downloaded = downloaded
@@ -26,11 +26,6 @@ class HyperscrapeChunk():
         self.start = start
         self.end = end
         self.worker_status: dict[str, WorkerStatus] = {}
-
-    def cleanup_workers(self, timeout=30):
-        for worker_id in list(self.worker_status.keys()):
-            if ((not self.worker_status[worker_id].complete) and time.time() - self.worker_status[worker_id].last_updated > timeout):
-                del self.worker_status[worker_id]
 
 class HyperscrapeFile():
     def __init__(self, file_id: str, file_path: str, total_size: int, url: str, chunk_size: int):
