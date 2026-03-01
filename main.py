@@ -284,6 +284,7 @@ def upload_file():
                     sha256_hash.update(data)
                     data = chunk_file_stream.read(read_size)
             os.remove(chunk_file_path)
+    state.sorted_downloadable_files.remove(chunk_file_object.file_id) # We don't want to download this again
     # write hashes to file
     state.file_hashes[chunk_file_object.file_path] = {
         "md5": md5_hash.hexdigest(),
@@ -295,7 +296,6 @@ def upload_file():
     #for chunk_id in chunk_file_object.chunks:
         #del state.chunks[chunk_id] # Delete chunks as they will not be read again
     chunk_file_object.chunks = [] # Clean clean clean!
-    state.sorted_downloadable_files.remove(chunk_file_object.file_id) # We don't want to download this again
     
     return {"ok": "Upload entire file complete!"}, 200
 
