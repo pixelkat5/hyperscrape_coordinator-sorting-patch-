@@ -1,9 +1,10 @@
 import os
 from uuid import uuid4
-from files import HyperscrapeFile, WorkerStatus
+from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 import state
 from flask import Flask, request
 import hashlib
+import shutil
 
 from helpers import get_auth_token, get_request_ip, get_url_size, get_worker
 
@@ -52,13 +53,31 @@ def get_chunks():
     # Get files with high worker counts
     # So the entire network is working together for a single file essenially
     chunks_to_download = []
+    chunk_to_file = {}
     file_download_candidate_offset = 0
     while len(chunks_to_download) < chunks_to_get and file_download_candidate_offset < len(state.sorted_downloadable_files):
         files_to_download_candidates = state.sorted_downloadable_files[file_download_candidate_offset:file_download_candidate_offset+chunks_to_get]
         for file_id in files_to_download_candidates:
             downloading_file_already = False
+
+            # If the file doesn't have a total size then we need to do that!
+            file = state.files[file_id]
+            if (file.total_size == None):
+                file.total_size = get_url_size(file.url)
+
+            # If the file hasn't generated chunks then we need to do that!
+            if (len(file.chunks) == 0):
+                current_size = 0
+                while current_size < file.total_size:
+                    start = current_size
+                    end = min(current_size + file.chunk_size, file.total_size)
+                    chunk_id = str(uuid4())
+                    state.chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
+                    file.chunks.append(chunk_id)
+                    current_size = end
+            
             # Ensure the worker isn't currently downloading this file
-            for chunk_id in state.files[file_id].chunks:
+            for chunk_id in file.chunks:
                 # Cleanup workers that have not uploaded in a while
                 state.cleanup_chunk_workers(chunk_id)
                 if (worker.worker_id in state.chunks[chunk_id].worker_status and not state.chunks[chunk_id].worker_status[worker.worker_id].complete):
@@ -69,7 +88,7 @@ def get_chunks():
                 continue
 
             highest_chunk_id = None
-            for chunk_id in state.files[file_id].chunks:
+            for chunk_id in file.chunks:
                 # Get the chunk in this file with the highest number of downloaders under trust_count
                 if (len(state.chunks[chunk_id].worker_status) >= state.config["general"]["trust_count"]):
                     continue
@@ -78,6 +97,7 @@ def get_chunks():
                 if (highest_chunk_id == None or len(state.chunks[chunk_id].worker_status) > len(state.chunks[highest_chunk_id].worker_status)):
                     highest_chunk_id = chunk_id
             if (highest_chunk_id != None):
+                chunk_to_file[highest_chunk_id] = file_id
                 chunks_to_download.append(highest_chunk_id)
         file_download_candidate_offset += chunks_to_get
 
@@ -87,9 +107,10 @@ def get_chunks():
     response = {}
     for chunk_id in chunks_to_download:
         chunk = state.chunks[chunk_id]
-        file = state.files[state.chunk_to_file[chunk_id]]
+        file = state.files[chunk_to_file[chunk_id]]
         state.chunks[chunk_id].worker_status[worker.worker_id] = WorkerStatus()
         response[chunk_id] = {
+            "file_id": chunk_to_file[chunk_id],
             "url": file.url,
             "range": [
                 chunk.start,
@@ -108,9 +129,13 @@ def put_status():
         if (not worker.worker_id in state.chunks[chunk_id].worker_status):
             continue
         chunk = state.chunks[chunk_id]
+        if (data[chunk_id] == None):
+            del state.chunks[chunk_id].worker_status[worker.worker_id]
+            continue
         worker_status = chunk.worker_status[worker.worker_id]
         worker_status.downloaded = data[chunk_id]["downloaded"]
         worker_status.mark_updated()
+        worker.update_last_seen()
     return {"ok": "ok"}, 200
 
 @app.route("/ping", methods=['GET'])
@@ -141,25 +166,27 @@ def upload_file():
         chunk = state.chunks[chunk_id]
         worker_status = chunk.worker_status[worker.worker_id]
         # Handle chunk uploading
-        chunk_file_object = state.files[state.chunk_to_file[chunk_id]]
+        chunk_file_object = state.files[file_id]
         temp_storage_folder = os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file_object.file_path)
         os.makedirs(temp_storage_folder, exist_ok=True)
         storage_path = os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker.worker_id}.bin")
-        with open(storage_path, "wb") as file:
+        with open(storage_path + ".partial", "wb") as file:
             chunk_hash = hashlib.md5()
             worker_status.uploaded = 0
             stream_data = request.stream.read()
             while (len(stream_data) > 0):
                 worker_status.uploaded += len(stream_data)
                 worker_status.mark_updated()
+                worker.update_last_seen()
                 file.write(stream_data)
                 chunk_hash.update(stream_data)
                 stream_data = request.stream.read()
-        if (os.path.exists(storage_path) and os.stat(storage_path).st_size == worker_status.downloaded):
+        if (os.path.exists(storage_path + ".partial") and os.stat(storage_path + ".partial").st_size == worker_status.downloaded):
             worker_status.mark_complete(chunk_hash.hexdigest()) # This chunk is now complete
+            os.rename(storage_path + ".partial", storage_path)
         else:
-            if (os.path.exists(storage_path)):
-                os.remove(storage_path)
+            if (os.path.exists(storage_path + ".partial")):
+                os.remove(storage_path + ".partial")
             del chunk.worker_status[worker.worker_id]
             return {"error": "Error processing chunk"}, 500
 
@@ -205,9 +232,22 @@ def upload_file():
             os.remove(os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_id}.bin"))
         os.rename(os.path.join(temp_storage_folder, f"chunk_{chunk.chunk_id}_{worker_ids[0]}.bin"), os.path.join(temp_storage_folder, f"chunk_{chunk.start}.bin"))
 
-        # Check if the whole file is complete
-        if (not state.check_file_complete(chunk_file_object.file_id)):
+        # Check if all the other chunks are also completed
+        file_complete = True
+        for chunk_id in chunk_file_object.chunks:
+            state.cleanup_chunk_workers(chunk_id)
+            worker_status_count = len(state.chunks[chunk_id].worker_status)
+            if (worker_status_count == 0 or worker_status_count < state.config["general"]["trust_count"]):
+                file_complete = False # Chunk hasn't been downloaded yet
+                break
+            for worker_id in state.chunks[chunk_id].worker_status:
+                if (not state.chunks[chunk_id].worker_status[worker_id].complete):
+                    file_complete = False # Chunk hasn't finished downloading yet
+                    break
+        
+        if (not file_complete):
             return {"ok": "This chunk is validated"}, 200 # We're not yet done with the whole file despite being done with this chunk!
+    
         # If we are done though, then we should construct and move the entire file
         chunk_files = []
         for chunk_id in chunk_file_object.chunks:
@@ -238,35 +278,14 @@ def upload_file():
             "sha1": sha1_hash.hexdigest(),
             "sha256": sha256_hash.hexdigest()
         }
-        state.save_file_hashes()
+        shutil.rmtree(temp_storage_folder, ignore_errors=True)
+        chunk_file_object.complete = True # Mark file as actually complete
+        for chunk_id in chunk_file_object.chunks:
+            del state.chunks[chunk_id] # Delete chunks as they will not be read again
+        state.save_data_files()
         state.sorted_downloadable_files.remove(chunk_file_object.file_id) # We don't want to download this again
         
         return {"ok": "Upload entire file complete!"}, 200
-
-###
-# FOR DEBUGGING ONLY!!!!
-# @TODO @FIXMe
-###
-state.files = {}
-state.chunks = {}
-state.chunk_to_file = {}
-state.sorted_downloadable_files = []
-state.file_worker_counts = {}
-test_urls = [
-    ("https://myrient.erista.me/files/No-Intro/ACT%20-%20Apricot%20PC%20Xi/%5BBIOS%5D%20MS-DOS%202.11%20%28Europe%29%20%28v3.1%29%20%28Disk%201%29%20%28OS%29.zip", "[BIOS] MS-DOS 2.11 (Europe) (v3.1) (Disk 1) (OS).zip"),
-    ("https://myrient.coffee/files/Nintendo%203DS%20(CIA)%20(2019-01-05)/7th%20Dragon%20III%20Code%20-%20VFD%20(Europe).cia", "7thdragon.cia"),
-    ("https://myrient.coffee/files/Nintendo%203DS%20(CIA)%20(2019-01-05)/Deer%20Drive%20Legends%20(USA)%20(En,Fr,Es).cia", "deer drive.cia"),
-    ("https://myrient.erista.me/files/Redump/Pocket%20PC/CoPilot%20Live%20-%20Pocket%20PC%204%20%28Europe%29%20%28En%2CFr%2CDe%2CEs%29%20%28Install%20Disc%20-%20Europe%29.zip", "copilot.zip"),
-    ("https://www.hackerdude.tech/vault/805653383-%e5%9b%9b%e8%b6%b3%e6%9c%ba%e5%99%a8%e4%ba%baSpot%e5%bd%bb%e5%ba%95%e6%8b%86%e8%a7%a3%e6%8a%a5%e5%91%8a.pdf", "805653383-四足机器人Spot彻底拆解报告.pdf")
-]
-for test_url in test_urls:
-    state.add_file(HyperscrapeFile(
-        str(uuid4()),
-        test_url[1],
-        get_url_size(test_url[0]),
-        test_url[0],
-        (1024*1024)*10 # 100MB chunks
-    ))
 
 if __name__ == "__main__":
     from waitress import serve

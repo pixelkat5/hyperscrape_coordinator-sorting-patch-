@@ -64,7 +64,7 @@ Tell the coordinator how much this worker has downloaded so far
 - `/status` **MUST** be called at an interval lower than the configured coordinator timeout interval.
 - `/status` **MUST** be called once before sending the file to `/upload`
 
-## PUT `/upload?chunk_id=CHUNK_ID`
-Uploads a file from a worker for `CHUNK_ID`
+## PUT `/upload?chunk_id=CHUNK_ID&file_id=FILE_ID`
+Uploads a file from a worker for `CHUNK_ID` of `FILE_ID`
 
 Worker just uploads the file here

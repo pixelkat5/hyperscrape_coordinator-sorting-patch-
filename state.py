@@ -28,7 +28,6 @@ console = Console()
 global workers
 global files
 global chunks
-global chunk_to_file
 global file_chunk_count
 global file_worker_count
 global sorted_files
@@ -36,7 +35,6 @@ global file_hashes
 workers: dict[str, Worker] = {}
 files: dict[str, HyperscrapeFile] = {}
 chunks: dict[str, HyperscrapeChunk] = {}
-chunk_to_file: dict[str, str] = {} # We store this for efficient chunk to file lookups (duh)
 file_worker_counts: dict[str, int] = {} # Count how many workers are using each file
 sorted_downloadable_files: list[str] = [] # List of files to be downloaded sorted by how many workers are using it
 file_hashes: dict[str, dict[str, str]] = {}
@@ -50,18 +48,13 @@ def save_file_state():
 def save_chunk_state():
     with open("./chunk_state.bin", 'wb') as file:
         pickle.dump(chunks, file)
-    
-def save_file_mapping():
-    with open("./chunk_file_mapping.bin", 'wb') as file:
-        pickle.dump(chunk_to_file, file)
 
 def save_file_hashes():
     with open("./file_hashes.bin", 'wb') as file:
         pickle.dump(file_hashes, file)
 
-def save_files():
+def save_data_files():
     save_chunk_state()
-    save_file_mapping()
     save_file_state()
     save_file_hashes()
 ###
@@ -77,22 +70,12 @@ os.makedirs(config["paths"]["storage_path"], exist_ok=True)
 # State helpers
 ###
 # Files
-def add_file(file: HyperscrapeFile):
-    global files
-    global chunk_to_file
+def add_file(file: HyperscrapeFile, defer_save: bool = False):
     files[file.file_id] = file
-    current_size = 0
-    while current_size < file.total_size:
-        start = current_size
-        end = min(current_size + file.chunk_size, file.total_size)
-        chunk_id = str(uuid4())
-        chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
-        chunk_to_file[chunk_id] = file.file_id
-        file.chunks.append(chunk_id)
-        current_size = end
     file_worker_counts[file.file_id] = 0
     sorted_downloadable_files.append(file.file_id)
-    save_files()
+    if (not defer_save):
+        save_data_files()
 
 # File data structure helpers
 def reorder_file_workers(file_id):
@@ -115,18 +98,6 @@ def add_worker(ip: str, max_upload: int, max_download: int, max_per_file_speed: 
     auth_token = AuthToken(worker_id)
     workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_upload, max_download, max_per_file_speed, threads)
     return auth_token
-
-# File helper
-def check_file_complete(file_id: str):
-    for chunk_id in files[file_id].chunks:
-        cleanup_chunk_workers(chunk_id)
-        worker_status_count = len(chunks[chunk_id].worker_status)
-        if (worker_status_count == 0 or worker_status_count < config["general"]["trust_count"]):
-            return False
-        for worker_id in chunks[chunk_id].worker_status:
-            if (not chunks[chunk_id].worker_status[worker_id].complete):
-                return False
-    return True
 
 # IP banning
 def write_banned_ips():
@@ -162,18 +133,16 @@ try:
         files = pickle.load(file)
     with open("./chunk_state.bin", 'rb') as file:
         chunks = pickle.load(file)
-    with open("./chunk_file_mapping.bin", 'rb') as file:
-        chunk_to_file = pickle.load(file)
     with open("./file_hashes.bin", 'rb') as file:
         file_hashes = pickle.load(file)
     print("Generating files to download...")
     for file_id in files:
         file = files[file_id]
-        if (check_file_complete(file_id)):
+        if (not files[file_id].complete):
             sorted_downloadable_files.append(file_id)
             file_worker_counts[file_id] = 0
     print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
 except Exception as e:
     print("NOTE: Could not load previous file state:")
     print(e)
-    save_files()
+    save_data_files()

@@ -55,7 +55,7 @@ class Console():
 
     def list_files(self, argv):
         print("Files (path, complete):")
-        self.dynamic_list(list(state.files.keys()), displayFunction=lambda index, file_id: f"{index}. {file_id}\t-\t{state.files[file_id].file_path} ({state.check_file_complete(file_id)})")
+        self.dynamic_list(list(state.files.keys()), displayFunction=lambda index, file_id: f"{index}. {file_id}\t-\t{state.files[file_id].file_path} ({state.files[file_id].complete})")
 
     def get_file(self, argv):
         file_id = argv[1]

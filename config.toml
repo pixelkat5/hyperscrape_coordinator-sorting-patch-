@@ -1,6 +1,6 @@
 [server]
 port = 8081
-threads = 409
+threads = 4096
 
 [general]
 version = 1 # The coordinator version

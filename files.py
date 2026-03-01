@@ -28,12 +28,11 @@ class HyperscrapeChunk():
         self.worker_status: dict[str, WorkerStatus] = {}
 
 class HyperscrapeFile():
-    def __init__(self, file_id: str, file_path: str, total_size: int, url: str, chunk_size: int):
+    def __init__(self, file_id: str, file_path: str, total_size: int|None, url: str, chunk_size: int):
         self.file_id = file_id
-        if (file_path[0] == '/'):
-            file_path = file_path[1:]
         self.file_path = file_path
-        self.total_size = total_size # In bytes
+        self.total_size: int|None = total_size # In bytes
         self.url = url
         self.chunk_size = chunk_size
         self.chunks: list[str] = []
+        self.complete: bool = False # Only set once the entire file is actually properly complete like actually

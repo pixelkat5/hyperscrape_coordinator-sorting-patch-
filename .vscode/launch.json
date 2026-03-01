@@ -10,6 +10,14 @@
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Hyperscrape List Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "generate_filelist.py",
+            "args": "-r ./myrient_index.csv --ignore_file_list ./sloth_repo.txt --ignore_file_list ./staging.txt",
+            "console": "integratedTerminal"
         }
     ]
 }
