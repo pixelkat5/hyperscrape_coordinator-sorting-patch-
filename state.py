@@ -53,21 +53,18 @@ hashes_lock = Lock()
 # State Files
 def save_file_state():
     with open("./file_state.bin", 'wb') as file:
-        files_lock.acquire()
-        pickle.dump(files, file, protocol=pickle.HIGHEST_PROTOCOL)
-        files_lock.release()
+        with files_lock:
+            pickle.dump(files, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_chunk_state():
     with open("./chunk_state.bin", 'wb') as file:
-        chunks_lock.acquire()
-        pickle.dump(chunks, file, protocol=pickle.HIGHEST_PROTOCOL)
-        chunks_lock.release()
+        with chunks_lock:
+            pickle.dump(chunks, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_file_hashes():
     with open("./file_hashes.bin", 'wb') as file:
-        hashes_lock.acquire()
-        pickle.dump(file_hashes, file, protocol=pickle.HIGHEST_PROTOCOL)
-        hashes_lock.release()
+        with hashes_lock:
+            pickle.dump(file_hashes, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_data_files():
     save_chunk_state()
@@ -87,11 +84,10 @@ os.makedirs(config["paths"]["storage_path"], exist_ok=True)
 ###
 # Files
 def add_file(file: HyperscrapeFile, defer_save: bool = False):
-    files_lock.acquire()
-    files[file.file_id] = file
-    file_worker_counts[file.file_id] = 0
-    sorted_downloadable_files.append(file.file_id)
-    files_lock.release()
+    with files_lock:
+        files[file.get_id()] = file
+        file_worker_counts[file.get_id()] = 0
+        sorted_downloadable_files.append(file.get_id())
     if (not defer_save):
         save_data_files()
 
@@ -108,18 +104,16 @@ def reorder_file_workers(file_id):
 
 # Workers
 def remove_worker(worker_id: str):
-    workers[worker_id].get_lock().acquire()
-    workers_lock.acquire()
-    del workers[worker_id] # Delete the worker
-    workers_lock.release()
+    with workers_lock:
+        with workers[worker_id].get_lock():
+            del workers[worker_id] # Delete the worker
 
 def add_worker(ip: str, max_concurrent: int):
-    workers_lock.acquire()
-    global workers
-    worker_id = str(uuid4())
-    auth_token = AuthToken(worker_id)
-    workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_concurrent)
-    workers_lock.release()
+    with workers_lock:
+        global workers
+        worker_id = str(uuid4())
+        auth_token = AuthToken(worker_id)
+        workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_concurrent)
     return auth_token
 
 # IP banning
@@ -143,12 +137,14 @@ def unban_ip(ip: str):
 # Chunks
 def cleanup_chunk_workers(chunk_id: str):
     chunk = chunks[chunk_id]
-    for worker_id in chunk.get_workers():
-        if (
-            (not worker_id in workers) or
-            ((not chunk.get_worker_status(worker_id).complete) and time.time() - chunk.worker_status[worker_id].last_updated > config["general"]["worker_timeout"])
-        ):
-            chunk.remove_worker_status(worker_id)
+    with chunk.get_lock():
+        for worker_id in chunk.get_workers():
+            if (
+                (not worker_id in workers) or
+                ((not chunk.get_worker_status(worker_id).get_complete()) and time.time() - chunk.get_worker_status(worker_id).get_last_updated() > config["general"]["worker_timeout"])
+            ):
+                with chunk.get_worker_status(worker_id).get_lock():
+                    chunk.remove_worker_status(worker_id)
 
 print("Loading current state...")
 try:

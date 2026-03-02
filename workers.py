@@ -11,9 +11,7 @@ class Worker():
         self._lock = Lock()
 
     def update_last_seen(self):
-        self._lock.acquire()
         self._last_seen = time.time()
-        self._lock.release()
 
     def get_id(self):
         return self._worker_id
