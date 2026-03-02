@@ -4,17 +4,16 @@ import time
 class WorkerStatus():
     def __init__(self, downloaded: int = 0, uploaded: int = 0):
         self._last_updated: int = time.time()
-        self._downloaded: int = downloaded
         self._uploaded: int = uploaded
         self._complete: bool = False
         self._hash: str|None = None
         self._lock: Lock = Lock()
 
     def __getstate__(self):
-        return (self._started, self._last_updated, self._downloaded, self._uploaded, self._complete, self._hash)
+        return (self._last_updated, self._uploaded, self._complete, self._hash)
     
     def __setstate__(self, state):
-        self._started, self._last_updated, self._downloaded, self._uploaded, self._complete, self._hash = state
+        self._last_updated, self._uploaded, self._complete, self._hash = state
         self._lock = Lock()
 
     def get_last_updated(self):
@@ -22,12 +21,6 @@ class WorkerStatus():
     
     def mark_updated(self):
         self._last_updated = time.time()
-    
-    def get_downloaded(self):
-        return self._downloaded
-    
-    def set_downloaded(self, downloaded: int):
-        self._downloaded = downloaded
     
     def get_uploaded(self):
         return self._uploaded
@@ -94,12 +87,7 @@ class HyperscrapeChunk():
     
     def get_worker_count(self):
         return len(self._worker_status)
-
-    def update_worker_status_downloaded(self, worker_id: str, downloaded: int):
-        with self._worker_status[worker_id].get_lock():
-            self._worker_status[worker_id].set_downloaded(downloaded)
-            self._worker_status[worker_id].mark_updated()
-
+    
     def update_worker_status_uploaded(self, worker_id: str, uploaded: int):
         with self._worker_status[worker_id].get_lock():
             self._worker_status[worker_id].set_uploaded(uploaded)

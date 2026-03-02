@@ -1,16 +1,25 @@
+import asyncio
+from io import FileIO
 import os
 from threading import Thread
 from uuid import uuid4
-from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
+
+from websockets import ConnectionClosedError, ConnectionClosedOK, ServerConnection
+from console import Console
+from files import HyperscrapeChunk
 from gc_thread import gc
 import state
-from flask import Flask, request
 import hashlib
 import shutil
 
-from helpers import get_request_ip, get_url_size, get_worker
+from helpers import get_chunk_instance_temp_path, get_chunk_path, get_url_size
 
 import argparse
+
+from workers import Worker
+from ws_message import WSMessage, WSMessageType
+from websockets.asyncio.server import serve
+
 
 parser = argparse.ArgumentParser(
                     prog='Hyperscrape Coordinator',
@@ -24,41 +33,27 @@ print("=  HYPERSCRAPE SERVER   =")
 print("= Created By Hackerdude =")
 print("=========================")
 
-app = Flask(__name__)
-
-@app.route("/")
-def root():
-    return 'Hyperscrape Coordinator - Created by <a href="https://hackerdude.tech">Hackerdude</a>'
-
-@app.route("/workers", methods=['POST'])
-def register_worker():
-    ip = get_request_ip()
+def register_worker(ip: str, data: dict):
     if (ip in state.banned_ips):
-        return {"error": "Could not connect to worker"}, 403
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Could not connect to worker"})
     #with state.workers_lock:
     #    for worker_id in list(state.workers.keys()):
     #        if (state.workers[worker_id].ip == ip):
     #            state.remove_worker(worker_id)
-    data = request.json
     if (data == None or
         (not "version" in data) or
         (not "max_concurrent" in data)):
-        return {"error": "Invalid Request"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid Request"})
     if (data["version"] > state.config['general']['version']):
-        return {"error": f"Version mismatch, expected {state.config['general']['version']}"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": f"Version mismatch, expected {state.config['general']['version']}"})
     auth_token = state.add_worker(ip, data["max_concurrent"])
-    return {
+    return WSMessage(WSMessageType.REGISTER_RESPONSE, {
         "worker_id": auth_token.id,
         "auth_token": auth_token.as_token()
-    }
+    })
 
-@app.route("/chunks", methods=['GET'])
-def get_chunks():
-    worker = get_worker()
-    if (not worker):
-        return {"error": "Invalid token!"}, 403
-    
-    num_chunks_to_get = int(request.args.get("n", 250))
+def get_chunks(worker: Worker, data: dict):
+    num_chunks_to_get = int(data["count"])
     # Get files with high worker counts
     # So the entire network is working together for a single file essenially
     chunks_to_download = []
@@ -116,7 +111,8 @@ def get_chunks():
     for chunk_id in chunks_to_download:
         chunk = state.chunks[chunk_id]
         file = state.files[chunk_to_file[chunk_id]]
-        state.chunks[chunk_id].add_worker_status(worker.get_id())
+        with state.chunks[chunk_id].get_lock():
+            state.chunks[chunk_id].add_worker_status(worker.get_id())
         response[chunk_id] = {
             "file_id": chunk_to_file[chunk_id],
             "url": file.get_url(),
@@ -125,128 +121,84 @@ def get_chunks():
                 chunk.get_end()
             ]
         }
-    return response
+    return WSMessage(WSMessageType.CHUNK_RESPONSE, response)
 
-@app.route("/status", methods=['PUT'])
-def put_status():
-    worker = get_worker()
-    if (not worker):
-        return {"error": "Invalid token!"}, 403
-    data = request.json
-    for chunk_id in data:
-        if (not chunk_id in state.chunks):
-            continue
-        if (not state.chunks[chunk_id].has_worker(worker.get_id())):
-            continue
-        chunk = state.chunks[chunk_id]
-        if (data[chunk_id] == None):
-            with chunk.get_lock():
-                with chunk.get_worker_status(worker.get_id()).get_lock():
-                    chunk.remove_worker_status(worker.get_id())
-            continue
-        chunk.update_worker_status_downloaded(worker.get_id(), data[chunk_id]["downloaded"])
-        worker.update_last_seen()
-    return {"ok": "ok"}, 200
-
-@app.route("/ping", methods=['GET'])
-def still_alive():
-    worker = get_worker()
-    if (not worker):
-        return {"error": "Invalid token!"}, 403
-    worker.update_last_seen()
-
-
-@app.route("/upload", methods=["PUT"])
-def upload_file():
-    worker = get_worker()
-    if (not worker):
-        return {"error": "Invalid token!"}, 403
-    chunk_id = request.args.get("chunk_id", None)
-    file_id = request.args.get("file_id", None) # @TODO
+def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], chunk_hashes: dict[str, object], file_paths: dict[str, str]):
+    chunk_id = data.get("chunk_id", None)
+    file_id = data.get("file_id", None)
 
     if (chunk_id == None or file_id == None):
-        return {"error": "Invalid request"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid request"})
 
     # Ensure the chunk exists
     if (not chunk_id in state.chunks):
-        return {"error": "Unknown chunk"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown chunk"})
     if (not state.chunks[chunk_id].has_worker(worker.get_id())):
-        return {"error": "Chunk not requested"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk not requested"})
     if (state.chunks[chunk_id].get_worker_status(worker.get_id()).get_complete()):
-        return {"error": "Chunk already complete"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk already complete"})
 
     chunk = state.chunks[chunk_id]
     # Handle chunk uploading
     chunk_file_object = state.files[file_id]
     if (not chunk_file_object.has_chunk(chunk_id)):
-        return {"error": "Unknown file"}, 400
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown file"})
     temp_storage_folder = os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file_object.get_path())
-    os.makedirs(temp_storage_folder, exist_ok=True)
-    storage_path = os.path.join(temp_storage_folder, f"chunk_{chunk.get_id()}_{worker.get_id()}.bin")
-    with open(storage_path + ".partial", "wb") as file:
-        chunk_hash = hashlib.md5()
-        chunk.update_worker_status_uploaded(worker.get_id(), 0)
-        try:
-            stream_data = request.stream.read()
-            while (len(stream_data) > 0):
-                chunk.update_worker_status_uploaded(worker.get_id(), chunk.get_worker_status(worker.get_id()).get_uploaded() + len(stream_data))
-                worker.update_last_seen()
-                file.write(stream_data)
-                chunk_hash.update(stream_data)
-                stream_data = request.stream.read()
-        except:
-            if (os.path.exists(storage_path + ".partial")):
-                os.remove(storage_path + ".partial")
-                with chunk.get_lock():
-                    with chunk.get_worker_status(worker.get_id()).get_lock():
-                        chunk.remove_worker_status(worker.get_id())
-                return {"error": "Error processing chunk"}, 500
-    if (os.path.exists(storage_path + ".partial") and os.stat(storage_path + ".partial").st_size == chunk.get_end() - chunk.get_start()):
-        chunk.mark_worker_status_complete(worker.get_id(), chunk_hash.hexdigest()) # This chunk is now complete
-        os.rename(storage_path + ".partial", storage_path)
-    else:
-        if (os.path.exists(storage_path + ".partial")):
-            os.remove(storage_path + ".partial")
-        with chunk.get_lock():
-            with chunk.get_worker_status(worker.get_id()).get_lock():
-                chunk.remove_worker_status(worker.get_id())
-        return {"error": "Error processing chunk"}, 500
+    # Check if a handle exits for this chunk
+    chunk_path = get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker.get_id())
+    if (not chunk_id in file_handles):
+        os.makedirs(os.path.dirname(chunk_path), exist_ok=True)
+        file_handles[chunk_id] = open(chunk_path + ".partial", 'wb')
+        file_paths[chunk_id] = chunk_path + ".partial"
+        chunk_hashes[chunk_id] = hashlib.md5()
+    
+    file_handles[chunk_id].write(data["payload"])
+    chunk_hashes[chunk_id].update(data["payload"])
+    chunk.update_worker_status_uploaded(worker.get_id(), file_handles[chunk_id].tell())
+
+    if (file_handles[chunk_id].tell() != chunk.get_end() - chunk.get_start()):
+        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Segment Received"}) # Chunk not yet finished
+
+    chunk.mark_worker_status_complete(worker.get_id(), chunk_hashes[chunk_id].hexdigest()) # This chunk is now complete
+    del chunk_hashes[chunk_id]
+    file_handles[chunk_id].close() # Close the file
+    del file_handles[chunk_id]
+    os.rename(chunk_path + ".partial", chunk_path)
 
     # Check that this hash matches the others that are complete
-    chunk_hashes = set()
+    chunk_hash_set = set()
     for worker_id in chunk.get_workers():
         worker_status = chunk.get_worker_status(worker_id)
         if (not worker_status.get_complete()):
             continue
-        chunk_hashes.add(worker_status.get_hash())
+        chunk_hash_set.add(worker_status.get_hash())
 
-    if (len(chunk_hashes) > 1): # There are mismatched hashes!
+    if (len(chunk_hash_set) > 1): # There are mismatched hashes!
         # We should re-download all the chunk instances we have if there is a mismatch
         for worker_id in list(chunk.get_workers()):
             worker_status = chunk.get_worker_status(worker_id)
             if (not worker_status.get_complete()):
                 continue
             with chunk.get_lock():
-                with chunk.get_worker_status(worker_id).get_lock():
-                    chunk.remove_worker_status(worker_id)
-                os.remove(os.path.join(temp_storage_folder, f"chunk_{chunk.get_id()}_{worker_id}.bin")) # Remove the chunk this worker downloaded
-        return {"result": "Upload had a mismatched hash, you can ignore this"}, 200 # We've processed the upload from the client, don't come back regardless of what happened
+                chunk.remove_worker_status(worker_id)
+                os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id)) # Remove the chunk this worker downloaded
+        return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this"}) # We've processed the upload from the client, don't come back regardless of what happened
     
     # If the hashes weren't mismatched...
     if (chunk.get_worker_count() < state.config["general"]["trust_count"]): # Check that we have all the chunks responses we need
-        return {"ok": "Upload looks good so far"}, 200
+        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"})
     for worker_id in chunk.get_workers(): # Check that they're all complete
         worker_status = chunk.get_worker_status(worker_id)
         if (not worker_status.get_complete()):
-            return {"ok": "Upload looks good so far"}, 200 # If any of the workers aren't complete we just skip this
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"}) # If any of the workers aren't complete we just skip this
     
     # So all the hashes are good
     # AND we have responses that are complete for every response for this chunk?
     # We can remove the other chunks and just keep ours
     worker_ids = list(chunk.get_workers())
     for worker_id in worker_ids[1:]: # Delete all but 1
-        os.remove(os.path.join(temp_storage_folder, f"chunk_{chunk.get_id()}_{worker_id}.bin"))
-    os.rename(os.path.join(temp_storage_folder, f"chunk_{chunk.get_id()}_{worker_ids[0]}.bin"), os.path.join(temp_storage_folder, f"chunk_{chunk.get_start()}.bin"))
+        os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id))
+    os.rename(chunk_path, get_chunk_path(chunk_file_object.get_id(), chunk_id))
 
     # Check if all the other chunks are also completed
     file_complete = True
@@ -262,13 +214,13 @@ def upload_file():
                 break
     
     if (not file_complete):
-        return {"ok": "This chunk is validated"}, 200 # We're not yet done with the whole file despite being done with this chunk!
+        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "This chunk is validated"}) # We're not yet done with the whole file despite being done with this chunk!
 
     # If we are done though, then we should construct and move the entire file
     chunk_files = []
     for chunk_id in chunk_file_object.get_chunks():
         chunk = state.chunks[chunk_id]
-        chunk_files.append(os.path.join(temp_storage_folder, f"chunk_{chunk.get_start()}.bin"))
+        chunk_files.append(get_chunk_path(chunk_file_object.get_id(), chunk_id))
 
     # Now we construct the final file!
     md5_hash = hashlib.md5()
@@ -303,13 +255,60 @@ def upload_file():
                 del state.chunks[chunk_id]
     chunk_file_object.clear_chunks()
     
-    return {"ok": "Upload entire file complete!"}, 200
+    return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
+
+def detach_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], chunk_hashes: dict[str, object], file_paths: dict[str, str]):
+    chunk_id = data["chunk_id"]
+    if (chunk_id in file_handles):
+        file_handles[chunk_id].close()
+        del file_handles[chunk_id]
+        del chunk_hashes[chunk_id]
+        os.remove(file_paths[chunk_id])
+        del file_paths[chunk_id]
+    if (state.chunks[chunk_id].has_worker(worker.get_id())):
+        state.chunks[chunk_id].remove_worker_status(worker.get_id())
+    return WSMessage(WSMessageType.OK_RESPONSE, {"ok", "detached"})
+
+async def handler(websocket: ServerConnection):
+    worker: Worker = None
+    file_handles: dict[str, FileIO] = {} # File handles for each chunk this worker is uploading
+    chunk_hashes: dict[str, object] = {}
+    file_paths: dict[str, str] = {} # Chunk to path
+    while True:
+        try:
+            data = await websocket.recv()
+            message: WSMessage = WSMessage.decode(data)
+            response = WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Message failure!"})
+            if (message.get_type() == WSMessageType.REGISTER):
+                response = register_worker(websocket.remote_address[0], message.get_payload())
+                worker = state.workers[response.get_payload()["worker_id"]]
+            elif (message.get_type() == WSMessageType.GET_CHUNKS):
+                response = get_chunks(worker, message.get_payload())
+            elif (message.get_type() == WSMessageType.UPLOAD_SUBCHUNK):
+                response = upload_chunk(worker, message.get_payload(), file_handles, chunk_hashes, file_paths)
+            elif (message.get_type() == WSMessageType.DETACH_CHUNK):
+                response = detach_chunk(worker, message.get_payload(), file_handles, chunk_hashes, file_paths)
+            await websocket.send(response.encode())
+        except (ConnectionClosedOK, ConnectionClosedError):
+            for chunk_id in file_handles:
+                file_handles[chunk_id].close()
+                os.remove(file_paths[chunk_id]) # Delete our partials
+                state.chunks[chunk_id].remove_worker_status(worker.get_id())
+            if (worker):
+                with state.workers_lock:
+                    del state.workers[worker.get_id()]
+            break
 
 gc_thread = Thread(target=gc)
 gc_thread.start()
-state.console.print(f'Listening on {state.config["server"]["port"]}')
-state.console.start()
 
-if (args.debug):
-    from waitress import serve
-    serve(app, host="0.0.0.0", port=state.config["server"]["port"], threads=128, backlog=4096)
+console = Console()
+
+async def main():
+    async with serve(handler, "", state.config["server"]["port"]) as server:
+        print(f"Listening on port {state.config["server"]["port"]}")
+        console.start()
+        await server.serve_forever()
+
+if __name__ == "__main__":
+    asyncio.run(main())

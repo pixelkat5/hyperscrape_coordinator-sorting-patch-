@@ -16,9 +16,12 @@ args = parser.parse_args()
 
 if (args.reset):
     print("Clearing files")
-    os.remove("./file_state.bin")
-    os.remove("./chunk_state.bin")
-    os.remove("./file_hashes.bin")
+    try:
+        os.remove("./file_state.bin")
+        os.remove("./chunk_state.bin")
+        os.remove("./file_hashes.bin")
+    except:
+        pass
 
 import state
 

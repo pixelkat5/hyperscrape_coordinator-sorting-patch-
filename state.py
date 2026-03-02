@@ -6,7 +6,6 @@ from threading import Lock
 import time
 from uuid import uuid4
 from auth_token import AuthToken
-from console import Console
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from workers import Worker
 from msgspec import json
@@ -22,9 +21,6 @@ try:
         banned_ips = json.decode(file.read())
 except:
     pass
-
-global console
-console = Console()
 
 global workers
 global files
@@ -138,13 +134,12 @@ def unban_ip(ip: str):
 def cleanup_chunk_workers(chunk_id: str):
     chunk = chunks[chunk_id]
     with chunk.get_lock():
-        for worker_id in chunk.get_workers():
+        for worker_id in list(chunk.get_workers()):
             if (
                 (not worker_id in workers) or
                 ((not chunk.get_worker_status(worker_id).get_complete()) and time.time() - chunk.get_worker_status(worker_id).get_last_updated() > config["general"]["worker_timeout"])
             ):
-                with chunk.get_worker_status(worker_id).get_lock():
-                    chunk.remove_worker_status(worker_id)
+                chunk.remove_worker_status(worker_id)
 
 print("Loading current state...")
 try:
