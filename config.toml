@@ -7,7 +7,7 @@ backlog = 8192
 [general]
 version = 2 # The coordinator version
 
-worker_timeout = 10
+worker_timeout = 600 # Disconect workers if they're idle for 10 minutes
 
 # @TODO: DEBUGGING ONLY SET THIS TO 3 OR MORE
 trust_count = 2 # How many workers need to download the same chunk before we trust that it is accurate (obviouly a higher number slows down the overall download!)

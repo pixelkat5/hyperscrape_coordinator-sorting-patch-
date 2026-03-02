@@ -8,4 +8,5 @@ def gc():
         if (current - last_save > 600): # Save every 10 minutes
             state.save_data_files()
             last_save = current
-        time.sleep(state.config["general"]["worker_timeout"])
+        state.order_leaderboard()
+        time.sleep(10) # Run this only every 5 seconds tops

@@ -1,6 +1,8 @@
 ###
 # State vars
 ###
+from collections import OrderedDict
+import math
 import os
 from threading import Lock
 import time
@@ -46,26 +48,98 @@ chunks_lock = Lock()
 hashes_lock = Lock()
 
 ###
+# Handles storing stats and all that
+###
+
+
+global completed_files
+global completed_chunks
+global assigned_chunks
+global failed_chunks
+global total_bytes
+completed_files = 0
+completed_chunks = 0
+assigned_chunks = 0
+failed_chunks = 0
+total_bytes = 0
+
+class LeaderboardObject():
+    def __init__(self, discord_id: str, discord_username: str, avatar_url: str, total_chunks: int = 0, total_bytes: int = 0):
+        self._discord_id = discord_id
+        self._discord_username = discord_username
+        self._avatar_url = avatar_url
+        self._total_chunks = total_chunks
+        self._total_bytes = total_bytes
+
+    def get_discord_id(self):
+        return self._discord_id
+    
+    def get_discord_username(self):
+        return self._discord_username
+    
+    def get_avatar_url(self):
+        return self._avatar_url
+    
+    def get_total_chunks(self):
+        return self._total_chunks
+    
+    def get_total_bytes(self):
+        return self._total_bytes
+    
+    def update_total_bytes(self, change: int):
+        self._total_bytes += change
+    
+    def update_total_chunks(self, change: int):
+        self._total_chunks += change
+
+
+global current_leaderboard
+global current_leaderboard_order
+global current_leaderboard_lock
+current_leaderboard_order: list[str] = []
+current_leaderboard: dict[str, LeaderboardObject] = {} # Maps discord IDs to a leaderboard objects
+current_leaderboard_lock = Lock()
+###
+###
+###
+
+def update_stats_bytes(discord_id: str, byte_count: int):
+    current_leaderboard[discord_id].update_total_bytes(byte_count)
+
+def update_stats_chunks(discord_id: str, chunk_count: int):
+    current_leaderboard[discord_id].update_total_chunks(chunk_count)
+
+def order_leaderboard():
+    global current_leaderboard_order
+    current_leaderboard_order = sorted(current_leaderboard, key=lambda key: current_leaderboard[key].get_total_bytes(), reverse=True)
+
+###
 # State Files
 def save_file_state():
-    with open("./file_state.bin", 'wb') as file:
-        with files_lock:
+    with files_lock:
+        with open("./file_state.bin", 'wb') as file:
             pickle.dump(files, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_chunk_state():
-    with open("./chunk_state.bin", 'wb') as file:
-        with chunks_lock:
+    with chunks_lock:
+        with open("./chunk_state.bin", 'wb') as file:
             pickle.dump(chunks, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_file_hashes():
-    with open("./file_hashes.bin", 'wb') as file:
-        with hashes_lock:
+    with hashes_lock:
+        with open("./file_hashes.bin", 'wb') as file:
             pickle.dump(file_hashes, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+def save_leaderboard_state():
+    with current_leaderboard_lock:
+        with open("./leaderboard.bin", "wb") as file:
+            pickle.dump(current_leaderboard, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_data_files():
     save_chunk_state()
     save_file_state()
     save_file_hashes()
+    save_leaderboard_state()
 ###
 
 global config
@@ -102,15 +176,7 @@ def reorder_file_workers(file_id):
 def remove_worker(worker_id: str):
     with workers_lock:
         with workers[worker_id].get_lock():
-            del workers[worker_id] # Delete the worker
-
-def add_worker(ip: str, max_concurrent: int):
-    with workers_lock:
-        global workers
-        worker_id = str(uuid4())
-        auth_token = AuthToken(worker_id)
-        workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, max_concurrent)
-    return auth_token
+            del workers[worker_id] # Delete the worker    
 
 # IP banning
 def write_banned_ips():
@@ -149,11 +215,19 @@ try:
         chunks = pickle.load(file)
     with open("./file_hashes.bin", 'rb') as file:
         file_hashes = pickle.load(file)
+    with open("./leaderboard.bin", 'rb') as file:
+        current_leaderboard = pickle.load(file)
     print("Generating files to download...")
     for file_id in files:
-        if (not files[file_id].get_complete()):
+        file = files[file_id]
+        if (file.get_complete()):
+            completed_files += 1
+            total_bytes += file.get_total_size()
+            completed_chunks += math.ceil(file.get_total_size() / files[file_id].get_chunk_size())
+        else:
             sorted_downloadable_files.append(file_id)
             file_worker_counts[file_id] = 0
+        del file
     print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
 except Exception as e:
     print("NOTE: Could not load previous file state:")

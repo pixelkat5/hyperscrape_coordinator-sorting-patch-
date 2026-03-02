@@ -5,6 +5,7 @@ from threading import Thread
 from uuid import uuid4
 
 from websockets import ConnectionClosedError, ConnectionClosedOK, ServerConnection
+from auth_token import AuthToken
 from console import Console
 from files import HyperscrapeChunk
 from gc_thread import gc
@@ -46,9 +47,13 @@ def register_worker(ip: str, data: dict):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid Request"})
     if (data["version"] > state.config['general']['version']):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": f"Version mismatch, expected {state.config['general']['version']}"})
-    auth_token = state.add_worker(ip, data["max_concurrent"])
+    
+    worker_id = str(uuid4())
+    auth_token = AuthToken(worker_id)
+    with state.workers_lock:
+        state.workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, data["max_concurrent"])
     return WSMessage(WSMessageType.REGISTER_RESPONSE, {
-        "worker_id": auth_token.id,
+        "worker_id": worker_id,
         "auth_token": auth_token.as_token()
     })
 
@@ -121,6 +126,7 @@ def get_chunks(worker: Worker, data: dict):
                 chunk.get_end()
             ]
         }
+    state.assigned_chunks += len(chunks_to_download)
     return WSMessage(WSMessageType.CHUNK_RESPONSE, response)
 
 def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], chunk_hashes: dict[str, object], file_paths: dict[str, str]):
@@ -154,6 +160,8 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
     
     file_handles[chunk_id].write(data["payload"])
     chunk_hashes[chunk_id].update(data["payload"])
+    if (worker.get_discord_id()):
+        state.update_stats_bytes(worker.get_discord_id(), len(data["payload"]))
     chunk.update_worker_status_uploaded(worker.get_id(), file_handles[chunk_id].tell())
 
     if (file_handles[chunk_id].tell() != chunk.get_end() - chunk.get_start()):
@@ -164,6 +172,9 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
     file_handles[chunk_id].close() # Close the file
     del file_handles[chunk_id]
     os.rename(chunk_path + ".partial", chunk_path)
+    state.completed_chunks += 1
+    if (worker.get_discord_id()):
+        state.update_stats_chunks(worker.get_discord_id(), 1)
 
     # Check that this hash matches the others that are complete
     with chunk.get_lock():
@@ -180,8 +191,9 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
                 worker_status = chunk.get_worker_status(worker_id)
                 if (not worker_status.get_complete()):
                     continue
-                #with chunk.get_lock():
                 chunk.remove_worker_status(worker_id)
+                state.failed_chunks += 1
+                state.assigned_chunks -= 1
                 os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id)) # Remove the chunk this worker downloaded
             return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this"}) # We've processed the upload from the client, don't come back regardless of what happened
         
@@ -264,6 +276,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
                     del state.chunks[chunk_id]
         chunk_file_object.clear_chunks()
     
+    state.completed_files += 1
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
 
 def detach_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], chunk_hashes: dict[str, object], file_paths: dict[str, str]):
@@ -277,6 +290,7 @@ def detach_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
             del file_paths[chunk_id]
         if (state.chunks[chunk_id].has_worker(worker.get_id())):
             state.chunks[chunk_id].remove_worker_status(worker.get_id())
+            state.assigned_chunks -= 1
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok", "detached"})
 
 async def handler(websocket: ServerConnection):
@@ -286,7 +300,7 @@ async def handler(websocket: ServerConnection):
     file_paths: dict[str, str] = {} # Chunk to path
     while True:
         try:
-            data = await websocket.recv()
+            data = await asyncio.wait_for(websocket.recv(), timeout=state.config["general"]["worker_timeout"]) # Timeout a worker after 10 minutes
             message: WSMessage = WSMessage.decode(data)
             response = WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Message failure!"})
             if (message.get_type() == WSMessageType.REGISTER):
@@ -299,11 +313,16 @@ async def handler(websocket: ServerConnection):
             elif (message.get_type() == WSMessageType.DETACH_CHUNK):
                 response = detach_chunk(worker, message.get_payload(), file_handles, chunk_hashes, file_paths)
             await websocket.send(response.encode())
-        except (ConnectionClosedOK, ConnectionClosedError):
+        except (ConnectionClosedOK, ConnectionClosedError, TimeoutError):
+            try:
+                await websocket.close()
+            except:
+                pass
             for chunk_id in file_handles:
                 file_handles[chunk_id].close()
                 os.remove(file_paths[chunk_id]) # Delete our partials
                 state.chunks[chunk_id].remove_worker_status(worker.get_id())
+                state.assigned_chunks -= 1
             if (worker):
                 with state.workers_lock:
                     del state.workers[worker.get_id()]
