@@ -99,8 +99,9 @@ class HyperscrapeChunk():
             self._worker_status[worker_id].mark_updated()
 
     def remove_worker_status(self, worker_id: str):
-        with self._worker_status[worker_id].get_lock():
-            del self._worker_status[worker_id]
+        if (worker_id in self._worker_status):
+            with self._worker_status[worker_id].get_lock():
+                del self._worker_status[worker_id]
 
     def get_lock(self):
         return self._lock

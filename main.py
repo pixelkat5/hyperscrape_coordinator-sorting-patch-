@@ -166,107 +166,117 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
     os.rename(chunk_path + ".partial", chunk_path)
 
     # Check that this hash matches the others that are complete
-    chunk_hash_set = set()
-    for worker_id in chunk.get_workers():
-        worker_status = chunk.get_worker_status(worker_id)
-        if (not worker_status.get_complete()):
-            continue
-        chunk_hash_set.add(worker_status.get_hash())
-
-    if (len(chunk_hash_set) > 1): # There are mismatched hashes!
-        # We should re-download all the chunk instances we have if there is a mismatch
-        for worker_id in list(chunk.get_workers()):
+    with chunk.get_lock():
+        chunk_hash_set = set()
+        for worker_id in chunk.get_workers():
             worker_status = chunk.get_worker_status(worker_id)
             if (not worker_status.get_complete()):
                 continue
-            with chunk.get_lock():
+            chunk_hash_set.add(worker_status.get_hash())
+
+        if (len(chunk_hash_set) > 1): # There are mismatched hashes!
+            # We should re-download all the chunk instances we have if there is a mismatch
+            for worker_id in list(chunk.get_workers()):
+                worker_status = chunk.get_worker_status(worker_id)
+                if (not worker_status.get_complete()):
+                    continue
+                #with chunk.get_lock():
                 chunk.remove_worker_status(worker_id)
                 os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id)) # Remove the chunk this worker downloaded
-        return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this"}) # We've processed the upload from the client, don't come back regardless of what happened
-    
-    # If the hashes weren't mismatched...
-    if (chunk.get_worker_count() < state.config["general"]["trust_count"]): # Check that we have all the chunks responses we need
-        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"})
-    for worker_id in chunk.get_workers(): # Check that they're all complete
-        worker_status = chunk.get_worker_status(worker_id)
-        if (not worker_status.get_complete()):
-            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"}) # If any of the workers aren't complete we just skip this
-    
-    # So all the hashes are good
-    # AND we have responses that are complete for every response for this chunk?
-    # We can remove the other chunks and just keep ours
-    worker_ids = list(chunk.get_workers())
-    for worker_id in worker_ids[1:]: # Delete all but 1
-        os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id))
-    os.rename(chunk_path, get_chunk_path(chunk_file_object.get_id(), chunk_id))
+            return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this"}) # We've processed the upload from the client, don't come back regardless of what happened
+        
+        # If the hashes weren't mismatched...
+        if (chunk.get_worker_count() < state.config["general"]["trust_count"]): # Check that we have all the chunks responses we need
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"})
+        for worker_id in chunk.get_workers(): # Check that they're all complete
+            worker_status = chunk.get_worker_status(worker_id)
+            if (not worker_status.get_complete()):
+                return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"}) # If any of the workers aren't complete we just skip this
+        
+        # So all the hashes are good
+        # AND we have responses that are complete for every response for this chunk?
+        # We can remove the other chunks and just keep ours
+        # Only if it hasn't already been done...
+        if (not os.path.exists(get_chunk_path(chunk_file_object.get_id(), chunk_id))):
+            worker_ids = list(chunk.get_workers())
+            for worker_id in worker_ids: # Delete all...
+                if (worker_id == worker.get_id()): # Except ours!
+                    continue
+                os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id))
+            os.rename(chunk_path, get_chunk_path(chunk_file_object.get_id(), chunk_id))
 
     # Check if all the other chunks are also completed
-    file_complete = True
-    for chunk_id in chunk_file_object.get_chunks():
-        state.cleanup_chunk_workers(chunk_id)
-        worker_status_count = state.chunks[chunk_id].get_worker_count()
-        if (worker_status_count == 0 or worker_status_count < state.config["general"]["trust_count"]):
-            file_complete = False # Chunk hasn't been downloaded yet
-            break
-        for worker_id in state.chunks[chunk_id].get_workers():
-            if (not state.chunks[chunk_id].get_worker_status(worker_id).get_complete()):
-                file_complete = False # Chunk hasn't finished downloading yet
+    with chunk_file_object.get_lock():
+        destination_path = os.path.join(state.config["paths"]["storage_path"], chunk_file_object.get_path())
+        if (os.path.exists(destination_path)):
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
+        
+        file_complete = True
+        for chunk_id in chunk_file_object.get_chunks():
+            state.cleanup_chunk_workers(chunk_id)
+            worker_status_count = state.chunks[chunk_id].get_worker_count()
+            if (worker_status_count == 0 or worker_status_count < state.config["general"]["trust_count"]):
+                file_complete = False # Chunk hasn't been downloaded yet
                 break
-    
-    if (not file_complete):
-        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "This chunk is validated"}) # We're not yet done with the whole file despite being done with this chunk!
+            for worker_id in state.chunks[chunk_id].get_workers():
+                if (not state.chunks[chunk_id].get_worker_status(worker_id).get_complete()):
+                    file_complete = False # Chunk hasn't finished downloading yet
+                    break
+        
+        if (not file_complete):
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "This chunk is validated"}) # We're not yet done with the whole file despite being done with this chunk!
 
-    # If we are done though, then we should construct and move the entire file
-    chunk_files = []
-    for chunk_id in chunk_file_object.get_chunks():
-        chunk = state.chunks[chunk_id]
-        chunk_files.append(get_chunk_path(chunk_file_object.get_id(), chunk_id))
+        # If we are done though, then we should construct and move the entire file
+        chunk_files = []
+        for chunk_id in chunk_file_object.get_chunks():
+            chunk = state.chunks[chunk_id]
+            chunk_files.append(get_chunk_path(chunk_file_object.get_id(), chunk_id))
 
-    # Now we construct the final file!
-    md5_hash = hashlib.md5()
-    sha1_hash = hashlib.sha1()
-    sha256_hash = hashlib.sha256()
-    destination_path = os.path.join(state.config["paths"]["storage_path"], chunk_file_object.get_path())
-    os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-    with open(destination_path, 'wb') as main_file:
-        for chunk_file_path in chunk_files:
-            with open(chunk_file_path, 'rb') as chunk_file_stream:
-                read_size = 1024**2 * 10
-                data = chunk_file_stream.read(read_size) # Read 10MB at a time
-                while (len(data) > 0):
-                    main_file.write(data)
-                    md5_hash.update(data)
-                    sha1_hash.update(data)
-                    sha256_hash.update(data)
-                    data = chunk_file_stream.read(read_size)
-            os.remove(chunk_file_path)
-    state.sorted_downloadable_files.remove(chunk_file_object.get_id()) # We don't want to download this again
-    # write hashes to file
-    state.file_hashes[chunk_file_object.get_path()] = {
-        "md5": md5_hash.hexdigest(),
-        "sha1": sha1_hash.hexdigest(),
-        "sha256": sha256_hash.hexdigest()
-    }
-    shutil.rmtree(temp_storage_folder, ignore_errors=True)
-    chunk_file_object.mark_complete() # Mark file as actually complete
-    for chunk_id in chunk_file_object.get_chunks():
-        with state.chunks_lock:
-            with state.chunks[chunk_id].get_lock():
-                del state.chunks[chunk_id]
-    chunk_file_object.clear_chunks()
+        # Now we construct the final file!
+        md5_hash = hashlib.md5()
+        sha1_hash = hashlib.sha1()
+        sha256_hash = hashlib.sha256()
+        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+        with open(destination_path, 'wb') as main_file:
+            for chunk_file_path in chunk_files:
+                with open(chunk_file_path, 'rb') as chunk_file_stream:
+                    read_size = 1024**2 * 10
+                    data = chunk_file_stream.read(read_size) # Read 10MB at a time
+                    while (len(data) > 0):
+                        main_file.write(data)
+                        md5_hash.update(data)
+                        sha1_hash.update(data)
+                        sha256_hash.update(data)
+                        data = chunk_file_stream.read(read_size)
+                os.remove(chunk_file_path)
+        state.sorted_downloadable_files.remove(chunk_file_object.get_id()) # We don't want to download this again
+        # write hashes to file
+        state.file_hashes[chunk_file_object.get_path()] = {
+            "md5": md5_hash.hexdigest(),
+            "sha1": sha1_hash.hexdigest(),
+            "sha256": sha256_hash.hexdigest()
+        }
+        shutil.rmtree(temp_storage_folder, ignore_errors=True)
+        chunk_file_object.mark_complete() # Mark file as actually complete
+        for chunk_id in chunk_file_object.get_chunks():
+            with state.chunks_lock:
+                with state.chunks[chunk_id].get_lock():
+                    del state.chunks[chunk_id]
+        chunk_file_object.clear_chunks()
     
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
 
 def detach_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], chunk_hashes: dict[str, object], file_paths: dict[str, str]):
     chunk_id = data["chunk_id"]
-    if (chunk_id in file_handles):
-        file_handles[chunk_id].close()
-        del file_handles[chunk_id]
-        del chunk_hashes[chunk_id]
-        os.remove(file_paths[chunk_id])
-        del file_paths[chunk_id]
-    if (state.chunks[chunk_id].has_worker(worker.get_id())):
-        state.chunks[chunk_id].remove_worker_status(worker.get_id())
+    with state.chunks[chunk_id].get_lock():
+        if (chunk_id in file_handles):
+            file_handles[chunk_id].close()
+            del file_handles[chunk_id]
+            del chunk_hashes[chunk_id]
+            os.remove(file_paths[chunk_id])
+            del file_paths[chunk_id]
+        if (state.chunks[chunk_id].has_worker(worker.get_id())):
+            state.chunks[chunk_id].remove_worker_status(worker.get_id())
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok", "detached"})
 
 async def handler(websocket: ServerConnection):
