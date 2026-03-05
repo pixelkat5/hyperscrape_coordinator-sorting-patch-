@@ -50,13 +50,18 @@
                 font-size: 3em;
             }
 
-            #code
+            #code, #error
             {
                 padding: 0.25em;
                 border-radius: 15px;
                 background: #1c1c1c;
                 box-shadow: inset 3px 3px 5px #0b0b0b,
                             inset -3px -3px 5px #2d2d2d;
+            }
+
+            #error
+            {
+                color: red;
             }
 
             button
@@ -86,26 +91,17 @@
         <div>
             <h2 id="title">Minerva Hyperscrape Authentication</h2>
             <h2 id="subtitle">Your code is:</h2>
-            <h1 id="code">Loading...</h1>
+            {{ if error }}
+            <h1 id="error">{{ error }}</h1>
+            {{ else }}
+            <h1 id="code">{{ code }}</h1>
+            {{ endif }}
             <button id="button">Copy To Clipboard</button>
         </div>
         <script>
-            try
-            {
-                document.getElementById("code").innerText = (new URLSearchParams(location.search)).get("code");
-                if (document.getElementById("code").innerText == "")
-                {
-                    throw "";
-                }
-                document.getElementById("button").addEventListener("click", (event) => {
-                    navigator.clipboard.writeText((new URLSearchParams(location.search)).get("code"));
-                })
-            }
-            catch
-            {
-                document.getElementById("code").innerText = "Could not load code";
-                document.getElementById("code").style = "color: red;"
-            }
+            document.getElementById("button").addEventListener("click", (event) => {
+                navigator.clipboard.writeText((new URLSearchParams(location.search)).get("code"));
+            });
         </script>
     </body>
 </html>

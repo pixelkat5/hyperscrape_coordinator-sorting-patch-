@@ -1,9 +1,10 @@
 from threading import Thread
-from flask import Flask, request
+from flask import Flask, render_template, request
+import requests
 from waitress import serve
 import state
 
-web_api_app = Flask(__name__)
+web_api_app = Flask(__name__, template_folder="./static/")
 
 
 @web_api_app.get("/api/stats")
@@ -41,18 +42,32 @@ def get_leaderboard():
 
 @web_api_app.get("/code")
 def get_code():
-    with open("./static/code.html") as file:
-        return file.read()
+    discord_code = request.args.get("code")
+    API_ENDPOINT = 'https://discord.com/api/v10'
+    req_data = {
+        'grant_type': 'authorization_code',
+        'code': discord_code,
+        'redirect_uri': state.secrets["discord"]["redirect_uri"]
+    }
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    r = requests.post('%s/oauth2/token' % API_ENDPOINT, data=req_data, headers=headers, auth=(state.secrets["discord"]["client_id"], state.secrets["discord"]["client_secret"]))
+    error = None
+    access_token = None
+    if (r.status_code == 200):
+        access_token = r.json()["access_token"]
+    else:
+        error = "Could not load token"
+    return render_template("code.html", code=access_token, error=error)
     
 @web_api_app.get("/")
 def slash_index():
-    with open("./static/index.html") as file:
-        return file.read()
+    return render_template("index.html")
     
 @web_api_app.get("/index.html")
 def html_index():
-    with open("./static/index.html") as file:
-        return file.read()
+    return render_template("index.html")
 
 def run_web_api():
     while True:
