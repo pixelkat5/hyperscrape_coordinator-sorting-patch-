@@ -43,6 +43,16 @@ def get_leaderboard():
 def get_code():
     with open("./static/code.html") as file:
         return file.read()
+    
+@web_api_app.get("/")
+def slash_index():
+    with open("./static/index.html") as file:
+        return file.read()
+    
+@web_api_app.get("/index.html")
+def html_index():
+    with open("./static/index.html") as file:
+        return file.read()
 
 def run_web_api():
     while True:
