@@ -71,11 +71,16 @@ def html_index():
     return render_template("index.html")
 
 def run_web_api():
-    server = create_server(web_api_app, host='0.0.0.0', port=state.config["server"]["http"]["port"], threads=state.config["server"]["http"]["threads"], backlog=state.config["server"]["http"]["backlog"])
     while True:
-        server.run()
-        time.sleep(120)
-        server.close()
+        try:
+            server = create_server(web_api_app, host='0.0.0.0', port=state.config["server"]["http"]["port"], threads=state.config["server"]["http"]["threads"], backlog=state.config["server"]["http"]["backlog"])
+            server.run()
+            time.sleep(120)
+            server.close()
+            del server
+        except Exception as e:
+            print(f"Waitress, the stupid server, crashed again: {e}")
+            time.sleep(5)
 
 def start_web_api():
     thread = Thread(target=run_web_api)
