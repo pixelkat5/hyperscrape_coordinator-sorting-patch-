@@ -272,7 +272,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
         sha1_hash = hashlib.sha1()
         sha256_hash = hashlib.sha256()
         os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-        with open(destination_path, 'wb') as main_file:
+        with open(destination_path + ".partial", 'wb') as main_file:
             for chunk_file_path in chunk_files:
                 with open(chunk_file_path, 'rb') as chunk_file_stream:
                     read_size = 1024**2 * 10
@@ -284,6 +284,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
                         sha256_hash.update(data)
                         data = chunk_file_stream.read(read_size)
                 os.remove(chunk_file_path)
+        os.rename(destination_path + ".partial", destination_path)
         state.sorted_downloadable_files.remove(chunk_file_object.get_id()) # We don't want to download this again
         # write hashes to file
         state.file_hashes[chunk_file_object.get_path()] = {
