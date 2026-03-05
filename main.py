@@ -53,7 +53,7 @@ def register_worker(ip: str, data: dict):
     discord_id = None
     discord_username = None
     avatar_url = None
-    if (data["access_token"]):
+    if (data.get("access_token", None)):
         r = requests.get("https://discord.com/api/users/@me", headers={
             "Authorization": f"Bearer {data['access_token']}"
         })
