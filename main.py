@@ -39,10 +39,10 @@ print("=========================")
 def register_worker(ip: str, data: dict):
     if (ip in state.banned_ips):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Could not connect to worker"})
-    #with state.workers_lock:
-    #    for worker_id in list(state.workers.keys()):
-    #        if (state.workers[worker_id].ip == ip):
-    #            state.remove_worker(worker_id)
+    with state.workers_lock:
+        for worker_id in list(state.workers.keys()):
+            if (state.workers[worker_id].get_ip() == ip):
+                state.remove_worker(worker_id)
     if (data == None or
         (not "version" in data) or
         (not "max_concurrent" in data)):
@@ -338,7 +338,7 @@ async def handler(websocket: ServerConnection):
             message: WSMessage = WSMessage.decode(data)
             response = WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Message failure!"})
             if (message.get_type() == WSMessageType.REGISTER):
-                response = register_worker(websocket.remote_address[0], message.get_payload())
+                response = register_worker(websocket.request.headers.get("x-forwarded-for"), message.get_payload())
                 worker = state.workers[response.get_payload()["worker_id"]]
             elif (message.get_type() == WSMessageType.GET_CHUNKS):
                 response = get_chunks(worker, message.get_payload())
@@ -368,7 +368,7 @@ gc_thread.start()
 console = Console()
 
 async def main():
-    async with serve(handler, "", state.config["server"]["port"]) as server:
+    async with serve(handler, "", state.config["server"]["port"], max_queue=128) as server:
         print(f"Listening on port {state.config["server"]["port"]}")
         start_web_api()
         console.start()
