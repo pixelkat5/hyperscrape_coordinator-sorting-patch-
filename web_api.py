@@ -73,7 +73,7 @@ def html_index():
 def run_web_api():
     while True:
         try:
-            http_server = WSGIServer(("127.0.0.1", state.config["server"]["http"]["port"]), web_api_app)
+            http_server = WSGIServer(("0.0.0.0", state.config["server"]["http"]["port"]), web_api_app)
             http_server.serve_forever()
         except Exception as e:
             print(f"WSGIServer, the stupid server, crashed again: {e}")
