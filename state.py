@@ -249,8 +249,14 @@ def load_files():
                     downloaded_bytes += file.get_total_size()
                     completed_chunks += math.ceil(file.get_total_size() / files[file_id].get_chunk_size())
                 else:
-                    sorted_downloadable_files.append(file_id)
                     file_worker_counts[file_id] = 0
+                    sorted_downloadable_files.append(file_id)
+                    for chunk_id in file.get_chunks():
+                        for worker_id in chunks[chunk_id].get_workers():
+                            file_worker_counts[file_id] += 1
+                            if (chunks[chunk_id].get_worker_status(worker_id).get_complete()):
+                                completed_chunks += 1
+                                downloaded_bytes += chunks[chunk_id].get_end() - chunks[chunk_id].get_start()
                 del file
         print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
         with current_leaderboard_lock:
