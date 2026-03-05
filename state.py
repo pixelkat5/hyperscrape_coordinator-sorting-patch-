@@ -227,10 +227,11 @@ def cleanup_chunk_workers(chunk_id: str):
             ):
                 chunk.remove_worker_status(worker_id)
                 # Cleanup worker info too...
-                with workers[worker_id].get_lock():
-                    workers[worker_id].close_file_handle(chunk.get_id())
-                    workers[worker_id].remove_file_path(chunk.get_id())
-                    workers[worker_id].remove_chunk_hash(chunk.get_id())
+                if (worker_id in workers):
+                    with workers[worker_id].get_lock():
+                        workers[worker_id].close_file_handle(chunk.get_id())
+                        workers[worker_id].remove_file_path(chunk.get_id())
+                        workers[worker_id].remove_chunk_hash(chunk.get_id())
 
 def load_files():
     global files_lock
