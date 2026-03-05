@@ -1,4 +1,5 @@
 from threading import Thread
+import time
 from flask import Flask, render_template, request
 import requests
 from waitress import serve
@@ -76,6 +77,7 @@ def run_web_api():
         except Exception as e:
             print("[WARN] Waitress crashed - restarting!")
             print(e)
+            time.sleep(5)
 
 def start_web_api():
     thread = Thread(target=run_web_api)
