@@ -38,10 +38,6 @@ print("=========================")
 def register_worker(ip: str, data: dict):
     if (ip in state.banned_ips):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Could not connect to worker"})
-    with state.workers_lock:
-        for worker_id in list(state.workers.keys()):
-            if (state.workers[worker_id].get_ip() == ip):
-                state.remove_worker(worker_id)
     if (data == None or
         (not "version" in data) or
         (not "max_concurrent" in data)):
@@ -108,7 +104,13 @@ def get_chunks(worker: Worker, data: dict):
         for chunk_id in file.get_chunks():
             # Cleanup workers that have not uploaded in a while
             state.cleanup_chunk_workers(chunk_id)
-            if (state.chunks[chunk_id].has_worker(worker.get_id()) and not state.chunks[chunk_id].get_worker_status(worker.get_id()).get_complete()):
+            has_worker_ip = False # We ensure the same IP isn't assigned the same file!
+            with state.workers_lock:
+                for worker_id in state.chunks[chunk_id].get_workers():
+                    if (state.workers[worker_id].get_ip() == worker.get_ip()):
+                        has_worker_ip = True
+                        break
+            if (has_worker_ip or state.chunks[chunk_id].has_worker(worker.get_id()) and not state.chunks[chunk_id].get_worker_status(worker.get_id()).get_complete()):
                 downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
                 break
         
