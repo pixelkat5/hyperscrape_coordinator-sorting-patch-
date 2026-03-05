@@ -7,6 +7,7 @@ class Worker():
         self._file_handles: dict[str, FileIO] = {} # File handles for each chunk this worker is uploading
         self._file_paths: dict[str, str] = {} # File paths for each chunk this worker is uploading
         self._chunk_hashes: dict[str, object] = {}
+        self._websocket = None
         self._worker_id = worker_id
         self._ip = ip
         self._auth_nonce = auth_nonce
@@ -14,6 +15,12 @@ class Worker():
         self._joined = time.time()
         self._discord_id = discord_id
         self._lock = Lock()
+
+    def get_websocket(self):
+        return self._websocket
+    
+    def set_websocket(self, websocket):
+        self._websocket = websocket
 
     def get_chunk_hashes(self):
         return self._chunk_hashes

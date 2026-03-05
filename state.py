@@ -194,6 +194,10 @@ def remove_worker(worker_id: str):
     global chunks
     with workers_lock:
         with workers[worker_id].get_lock():
+            try:
+                workers[worker_id].get_websocket().close()
+            except:
+                pass
             for chunk_id in workers[worker_id].get_file_handles():
                 workers[worker_id].close_file_handle(chunk_id)
                 os.remove(workers[worker_id].get_file_path(chunk_id)) # Delete our partials

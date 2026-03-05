@@ -332,6 +332,7 @@ async def handler(websocket: ServerConnection):
                     await websocket.close()
                     raise "Bad worker register message"
                 worker = state.workers[response.get_payload()["worker_id"]]
+                worker.set_websocket(websocket)
             elif (message.get_type() == WSMessageType.GET_CHUNKS):
                 response = get_chunks(worker, message.get_payload())
             elif (message.get_type() == WSMessageType.UPLOAD_SUBCHUNK):

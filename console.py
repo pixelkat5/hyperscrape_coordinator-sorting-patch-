@@ -105,6 +105,10 @@ class Console():
                 print("ERR: Command must be one of U, D, M, L or Q")
 
     def quit(self, argv):
+        print("Removing workers...")
+        for worker_id in state.workers:
+            state.remove_worker(worker_id)
+        print("Done!")
         print("Saving state...")
         state.save_data_files()
         print("Quitting!")
