@@ -100,7 +100,7 @@
         </div>
         <script>
             document.getElementById("button").addEventListener("click", (event) => {
-                navigator.clipboard.writeText((new URLSearchParams(location.search)).get("code"));
+                navigator.clipboard.writeText("{{code}}");
             });
         </script>
     </body>
