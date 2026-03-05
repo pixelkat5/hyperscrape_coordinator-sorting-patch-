@@ -9,7 +9,7 @@ web_api_app = Flask(__name__, template_folder="./static/")
 
 
 @web_api_app.get("/api/stats")
-async def get_stats():
+def get_stats():
     total_files = len(state.files)
     return {
         "total_files": total_files,
@@ -27,7 +27,7 @@ async def get_stats():
 
 
 @web_api_app.get("/api/leaderboard")
-async def get_leaderboard():
+def get_leaderboard():
     limit = request.args.get("limit", 25)
     offset = request.args.get("offset", 0)
     response = []
@@ -42,7 +42,7 @@ async def get_leaderboard():
     return response
 
 @web_api_app.get("/code")
-async def get_code():
+def get_code():
     discord_code = request.args.get("code")
     API_ENDPOINT = 'https://discord.com/api/v10'
     req_data = {
@@ -63,11 +63,11 @@ async def get_code():
     return render_template("code.html", code=access_token, error=error)
     
 @web_api_app.get("/")
-async def slash_index():
+def slash_index():
     return render_template("index.html")
     
 @web_api_app.get("/index.html")
-async def html_index():
+def html_index():
     return render_template("index.html")
 
 def run_web_api():
