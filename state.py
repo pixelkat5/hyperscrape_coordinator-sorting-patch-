@@ -121,22 +121,22 @@ def order_leaderboard():
 # State Files
 def save_file_state():
     with files_lock:
-        with open("./file_state.bin", 'wb') as file:
+        with open("./file_state.bin.temp", 'wb') as file:
             pickle.dump(files, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_chunk_state():
     with chunks_lock:
-        with open("./chunk_state.bin", 'wb') as file:
+        with open("./chunk_state.bin.temp", 'wb') as file:
             pickle.dump(chunks, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_file_hashes():
     with hashes_lock:
-        with open("./file_hashes.bin", 'wb') as file:
+        with open("./file_hashes.bin.temp", 'wb') as file:
             pickle.dump(file_hashes, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_leaderboard_state():
     with current_leaderboard_lock:
-        with open("./leaderboard.bin", "wb") as file:
+        with open("./leaderboard.bin.temp", "wb") as file:
             pickle.dump(current_leaderboard, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_data_files():
@@ -144,6 +144,11 @@ def save_data_files():
     save_file_state()
     save_file_hashes()
     save_leaderboard_state()
+    # Only once ALL state files are fully written, do we write them
+    os.replace("./file_state.bin.temp", "./file_state.bin")
+    os.replace("./chunk_state.bin.temp", "./chunk_state.bin")
+    os.replace("./file_hashes.bin.temp", "./file_hashes.bin")
+    os.replace("./leaderboard.bin.temp", "./leaderboard.bin")
 ###
 
 global config

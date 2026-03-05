@@ -193,7 +193,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
     del chunk_hashes[chunk_id]
     file_handles[chunk_id].close() # Close the file
     del file_handles[chunk_id]
-    os.rename(chunk_path + ".partial", chunk_path)
+    os.replace(chunk_path + ".partial", chunk_path)
     state.assigned_chunks -= 1
     state.completed_chunks += 1
     if (worker.get_discord_id()):
@@ -238,7 +238,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
                 if (worker_id == worker.get_id()): # Except ours!
                     continue
                 os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id))
-            os.rename(chunk_path, get_chunk_path(chunk_file_object.get_id(), chunk_id))
+            os.replace(chunk_path, get_chunk_path(chunk_file_object.get_id(), chunk_id))
 
     # Check if all the other chunks are also completed
     with chunk_file_object.get_lock():
@@ -284,7 +284,7 @@ def upload_chunk(worker: Worker, data: dict, file_handles: dict[str, FileIO], ch
                         sha256_hash.update(data)
                         data = chunk_file_stream.read(read_size)
                 os.remove(chunk_file_path)
-        os.rename(destination_path + ".partial", destination_path)
+        os.replace(destination_path + ".partial", destination_path)
         state.sorted_downloadable_files.remove(chunk_file_object.get_id()) # We don't want to download this again
         # write hashes to file
         state.file_hashes[chunk_file_object.get_path()] = {
