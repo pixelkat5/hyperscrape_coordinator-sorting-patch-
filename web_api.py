@@ -73,8 +73,9 @@ def run_web_api():
     while True:
         try:
             serve(web_api_app, host='0.0.0.0', port=state.config["server"]["http"]["port"], threads=state.config["server"]["http"]["threads"], backlog=state.config["server"]["http"]["backlog"])
-        except:
+        except Exception as e:
             print("[WARN] Waitress crashed - restarting!")
+            print(e)
 
 def start_web_api():
     thread = Thread(target=run_web_api)
