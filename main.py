@@ -47,8 +47,8 @@ def register_worker(ip: str, data: dict):
         (not "version" in data) or
         (not "max_concurrent" in data)):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid Request"})
-    if (data["version"] > state.config['general']['version']):
-        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": f"Version mismatch, expected {state.config['general']['version']}"})
+    if (data["version"] != state.config['general']['version']):
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": f"Version mismatch, expected {state.config['general']['version']}, got {data['version']}"})
     
     discord_id = None
     discord_username = None
