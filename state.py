@@ -188,6 +188,10 @@ def reorder_file_workers(file_id):
 
 # Workers
 def remove_worker(worker_id: str):
+    global assigned_chunks
+    global workers_lock
+    global workers
+    global chunks
     with workers_lock:
         with workers[worker_id].get_lock():
             for chunk_id in workers[worker_id].get_file_handles():
