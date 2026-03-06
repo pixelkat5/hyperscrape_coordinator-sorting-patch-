@@ -1,0 +1,79 @@
+import sqlite3
+import threading
+from typing import Callable, Any
+
+
+class StateDB:
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+
+        # we have multiple threads, so need to guarantee only one write at a time
+        # sqlite is not thread safe and this is simpler than a writer queue
+        # as of writing, it seems only main is writing the states during normal ops
+        self._local = threading.local()
+        self._write_lock = threading.Lock()
+        self._write_conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._configure(self._write_conn)
+        self._initialize_db()
+
+    @property
+    def _conn(self):
+        # reading conn for each thread
+        if not hasattr(self._local, "conn"):
+            self._local.conn = sqlite3.connect(self._db_path)
+            self._configure(self._local.conn)
+        return self._local.conn
+
+    @staticmethod
+    def _configure(conn: sqlite3.Connection):
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.row_factory = sqlite3.Row
+
+    def _write(self, fn: Callable[[sqlite3.Connection], Any]):
+        with self._write_lock:
+            with self._write_conn:
+                return fn(self._write_conn)
+
+    def _initialize_db(self):
+        # you wouldn't want to do bad things here
+        with open("state_db_init.sql") as f:
+            with self._write_conn:
+                self._write_conn.executescript(f.read())
+
+    # now comes business logic
+
+    def get_files(self) -> list[dict]:
+        with self._conn:
+            cur = self._conn.execute("SELECT * FROM file")
+            return cur.fetchall()
+
+    def get_chunks(self) -> list[dict]:
+        with self._conn:
+            cur = self._conn.execute("SELECT * FROM chunk")
+            return cur.fetchall()
+
+    def get_chunks_for_file(self, file_id: str) -> list[dict]:
+        with self._conn:
+            cur = self._conn.execute("SELECT * FROM chunk WHERE file_id = ?", (file_id,))
+            return cur.fetchall()
+
+    def get_workers_for_chunk(self, chunk_id: str) -> list[dict]:
+        with self._conn:
+            cur = self._conn.execute("SELECT * FROM worker_chunk WHERE chunk_id = ?", (chunk_id,))
+            return cur.fetchall()
+
+    def get_file_hashes(self):
+        with self._conn:
+            cur = self._conn.execute("SELECT path, md5, sha1, sha256 FROM file_hash JOIN main.file f on f.id = file_hash.file_id")
+            return cur.fetchall()
+
+    def get_leaderboard(self):
+        with self._conn:
+            cur = self._conn.execute("SELECT * FROM leaderboard ORDER BY downloaded_bytes DESC")
+            return cur.fetchall()
+
+
+# global singleton and we'll just use the hardcoded filename here
+# each thread will have its own conn on first use
+db: StateDB = StateDB("state.db")

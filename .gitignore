@@ -208,6 +208,8 @@ __marimo__/
 
 # State files
 *.bin
+*.bin.bck
 staging
 secrets.toml
 mnt
+state.db*

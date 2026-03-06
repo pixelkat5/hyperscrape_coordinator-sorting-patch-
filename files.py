@@ -2,11 +2,13 @@ from threading import Lock
 import time
 
 class WorkerStatus():
-    def __init__(self, downloaded: int = 0, uploaded: int = 0):
-        self._last_updated: int = time.time()
+    def __init__(self, downloaded: int = 0, uploaded: int = 0, complete: bool = False, hash: str|None = None, last_updated: int | None = None):
+        if last_updated is None:
+            last_updated = time.time()
+        self._last_updated: int = last_updated
         self._uploaded: int = uploaded
-        self._complete: bool = False
-        self._hash: str|None = None
+        self._complete: bool = complete
+        self._hash: str|None = hash
         self._lock: Lock = Lock()
 
     def __getstate__(self):
@@ -47,12 +49,14 @@ class WorkerStatus():
 # It's also more efficient
 ###
 class HyperscrapeChunk():
-    def __init__(self, chunk_id: str, start: int, end: int):
+    def __init__(self, chunk_id: str, start: int, end: int, worker_status: dict[str, WorkerStatus] = None):
+        if worker_status is None:
+            worker_status = {}
         self._lock: Lock = Lock()
         self._chunk_id: str = chunk_id
         self._start: int = start
         self._end: int = end
-        self._worker_status: dict[str, WorkerStatus] = {}
+        self._worker_status: dict[str, WorkerStatus] = worker_status
 
     def __getstate__(self):
         return (self._chunk_id, self._start, self._end, self._worker_status)
@@ -108,15 +112,17 @@ class HyperscrapeChunk():
 
 
 class HyperscrapeFile():
-    def __init__(self, file_id: str, file_path: str, total_size: int|None, url: str, chunk_size: int):
+    def __init__(self, file_id: str, file_path: str, total_size: int|None, url: str, chunk_size: int, chunks: set[str] = None, complete: bool = False):
+        if chunks is None:
+            chunks = set()
         self._lock: Lock = Lock()
         self._file_id: str = file_id
         self._file_path: str = file_path
         self._total_size: int|None = total_size # In bytes
         self._url: str = url
         self._chunk_size: int = chunk_size
-        self._chunks: set[str] = set()
-        self._complete: bool = False # Only set once the entire file is actually properly complete like actually
+        self._chunks: set[str] = chunks
+        self._complete: bool = complete # will need to re-init from database
 
     def __getstate__(self):
         return (self._file_id, self._file_path, self._total_size, self._url, self._chunk_size, self._chunks, self._complete)
