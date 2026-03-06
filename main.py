@@ -165,7 +165,9 @@ def upload_chunk(worker: Worker, data: dict):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk not requested", "chunk_id": chunk_id})
     if (state.chunks[chunk_id].get_worker_status(worker.get_id()).get_complete()):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk already complete", "chunk_id": chunk_id})
-
+    if (not file_id in state.files):
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown file", "chunk_id": chunk_id})
+    
     chunk = state.chunks[chunk_id]
     # Handle chunk uploading
     chunk_file_object = state.files[file_id]
