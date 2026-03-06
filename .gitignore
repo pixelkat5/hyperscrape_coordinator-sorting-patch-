@@ -210,3 +210,4 @@ __marimo__/
 *.bin
 staging
 secrets.toml
+mnt
