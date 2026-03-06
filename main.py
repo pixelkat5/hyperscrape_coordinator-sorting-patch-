@@ -159,17 +159,17 @@ def upload_chunk(worker: Worker, data: dict):
 
     # Ensure the chunk exists
     if (not chunk_id in state.chunks):
-        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown chunk"})
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown chunk", "chunk_id": chunk_id})
     if (not state.chunks[chunk_id].has_worker(worker.get_id())):
-        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk not requested"})
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk not requested", "chunk_id": chunk_id})
     if (state.chunks[chunk_id].get_worker_status(worker.get_id()).get_complete()):
-        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk already complete"})
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Chunk already complete", "chunk_id": chunk_id})
 
     chunk = state.chunks[chunk_id]
     # Handle chunk uploading
     chunk_file_object = state.files[file_id]
     if (not chunk_file_object.has_chunk(chunk_id)):
-        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown file"})
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Unknown file", "chunk_id": chunk_id})
     temp_storage_folder = os.path.join(state.config["paths"]["chunk_temp_path"], chunk_file_object.get_path())
     # Check if a handle exits for this chunk
     chunk_path = get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker.get_id())
@@ -189,7 +189,7 @@ def upload_chunk(worker: Worker, data: dict):
     chunk.update_worker_status_uploaded(worker.get_id(), worker.get_file_handle(chunk_id).tell())
 
     if (worker.get_file_handle(chunk_id).tell() != chunk.get_end() - chunk.get_start()):
-        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Segment Received"}) # Chunk not yet finished
+        return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Segment Received", "chunk_id": chunk_id}) # Chunk not yet finished
 
     chunk.mark_worker_status_complete(worker.get_id(), worker.get_chunk_hash(chunk_id).hexdigest()) # This chunk is now complete
     worker.remove_chunk_hash(chunk_id)
@@ -220,15 +220,15 @@ def upload_chunk(worker: Worker, data: dict):
                 state.failed_chunks += 1
                 state.assigned_chunks -= 1
                 os.remove(get_chunk_instance_temp_path(chunk_file_object.get_id(), chunk_id, worker_id)) # Remove the chunk this worker downloaded
-            return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this"}) # We've processed the upload from the client, don't come back regardless of what happened
+            return WSMessage(WSMessageType.OK_RESPONSE, {"result": "Upload had a mismatched hash, you can ignore this", "chunk_id": chunk_id}) # We've processed the upload from the client, don't come back regardless of what happened
         
         # If the hashes weren't mismatched...
         if (chunk.get_worker_count() < state.config["general"]["trust_count"]): # Check that we have all the chunks responses we need
-            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"})
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far", "chunk_id": chunk_id})
         for worker_id in chunk.get_workers(): # Check that they're all complete
             worker_status = chunk.get_worker_status(worker_id)
             if (not worker_status.get_complete()):
-                return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far"}) # If any of the workers aren't complete we just skip this
+                return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload looks good so far", "chunk_id": chunk_id}) # If any of the workers aren't complete we just skip this
         
         # So all the hashes are good
         # AND we have responses that are complete for every response for this chunk?
@@ -246,7 +246,7 @@ def upload_chunk(worker: Worker, data: dict):
     with chunk_file_object.get_lock():
         destination_path = os.path.join(state.config["paths"]["storage_path"], chunk_file_object.get_path())
         if (os.path.exists(destination_path)):
-            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!", "chunk_id": chunk_id})
         
         file_complete = True
         for chunk_id in chunk_file_object.get_chunks():
@@ -261,7 +261,7 @@ def upload_chunk(worker: Worker, data: dict):
                     break
         
         if (not file_complete):
-            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "This chunk is validated"}) # We're not yet done with the whole file despite being done with this chunk!
+            return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "This chunk is validated", "chunk_id": chunk_id}) # We're not yet done with the whole file despite being done with this chunk!
 
         # If we are done though, then we should construct and move the entire file
         chunk_files = []
@@ -303,7 +303,7 @@ def upload_chunk(worker: Worker, data: dict):
         chunk_file_object.clear_chunks()
     
     state.completed_files += 1
-    return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!"})
+    return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!", "chunk_id": chunk_id})
 
 def detach_chunk(worker: Worker, data: dict):
     chunk_id = data["chunk_id"]
@@ -316,7 +316,7 @@ def detach_chunk(worker: Worker, data: dict):
         if (state.chunks[chunk_id].has_worker(worker.get_id())):
             state.chunks[chunk_id].remove_worker_status(worker.get_id())
             state.assigned_chunks -= 1
-    return WSMessage(WSMessageType.OK_RESPONSE, {"ok", "detached"})
+    return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "detached", "chunk_id": chunk_id})
 
 async def handler(websocket: ServerConnection):
     worker: Worker = None
