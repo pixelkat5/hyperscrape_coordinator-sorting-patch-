@@ -330,6 +330,13 @@ def detach_chunk(worker: Worker, data: dict):
 async def handler(websocket: ServerConnection):
     worker: Worker = None
     while True:
+        if (state.shutting_down):
+            try:
+                websocket.send(WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Server is shutting down!"}))
+                websocket.close()
+            except:
+                pass
+            return
         try:
             data = await asyncio.wait_for(websocket.recv(), timeout=state.config["general"]["worker_timeout"]) # Timeout a worker after 10 minutes
             if data[:3] == b'\x00\x80\x05': # If we receive a legacy pickled request, send a legacy pickled resopnse with an error
