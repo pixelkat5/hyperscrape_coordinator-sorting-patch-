@@ -192,18 +192,19 @@ def remove_worker(worker_id: str):
     global workers
     global chunks
     with workers_lock:
-        with workers[worker_id].get_lock():
-            try:
-                workers[worker_id].get_websocket().close()
-            except:
-                pass
-            for chunk_id in list(workers[worker_id].get_file_handles().keys()):
-                workers[worker_id].close_file_handle(chunk_id)
-                os.remove(workers[worker_id].get_file_path(chunk_id)) # Delete our partials
-                workers[worker_id].remove_chunk_hash(chunk_id)
-                chunks[chunk_id].remove_worker_status(workers[worker_id].get_id())
-                assigned_chunks -= 1
-            del workers[worker_id] # Delete the worker
+        if (worker_id in workers):
+            with workers[worker_id].get_lock():
+                try:
+                    workers[worker_id].get_websocket().close()
+                except:
+                    pass
+                for chunk_id in list(workers[worker_id].get_file_handles().keys()):
+                    workers[worker_id].close_file_handle(chunk_id)
+                    os.remove(workers[worker_id].get_file_path(chunk_id)) # Delete our partials
+                    workers[worker_id].remove_chunk_hash(chunk_id)
+                    chunks[chunk_id].remove_worker_status(workers[worker_id].get_id())
+                    assigned_chunks -= 1
+                del workers[worker_id] # Delete the worker
 
 # IP banning
 def write_banned_ips():
