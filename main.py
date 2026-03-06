@@ -338,7 +338,8 @@ async def handler(websocket: ServerConnection):
                 pass
             return
         try:
-            data = await asyncio.wait_for(websocket.recv(), timeout=state.config["general"]["worker_timeout"]) # Timeout a worker after 10 minutes
+            async with asyncio.timeout(timeout=state.config["general"]["worker_timeout"]):
+                data = await websocket.recv() # Timeout a worker after 10 minutes
             if data[:3] == b'\x00\x80\x05': # If we receive a legacy pickled request, send a legacy pickled resopnse with an error
                 await websocket.send(b'\x00\x80\x05\x95G\x00\x00\x00\x00\x00\x00\x00}\x94\x8c\x05error\x94\x8c8Your worker is using a legacy protocol - PLEASE UPGRADE!\x94s.')
                 await websocket.close()
@@ -352,7 +353,7 @@ async def handler(websocket: ServerConnection):
                 if (not response.get_payload().get("worker_id", None)):
                     await websocket.send(response.encode())
                     await websocket.close()
-                    raise "Bad worker register message"
+                    raise Exception("Bad worker register message")
                 worker = state.workers[response.get_payload()["worker_id"]]
                 worker.set_websocket(websocket)
             elif (message.get_type() == WSMessageType.GET_CHUNKS):
@@ -381,7 +382,7 @@ gc_thread.start()
 console = Console()
 
 async def main():
-    async with serve(handler, "", state.config["server"]["port"], max_queue=128) as server:
+    async with serve(handler, "", state.config["server"]["port"], max_queue=128, ping_interval=60, ping_timeout=60) as server:
         print(f"Listening on port {state.config["server"]["port"]}")
         from web_api import start_web_api # Here to avoid patching our important stuff (i know what i said)
         start_web_api()
