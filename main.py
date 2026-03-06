@@ -39,6 +39,7 @@ def register_worker(ip: str, data: dict):
     if (ip in state.banned_ips):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Could not connect to worker"})
     if (data == None or
+        type(data) != dict or
         (not "version" in data) or
         (not "max_concurrent" in data)):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid Request"})
@@ -151,6 +152,9 @@ def get_chunks(worker: Worker, data: dict):
     return WSMessage(WSMessageType.CHUNK_RESPONSE, response)
 
 def upload_chunk(worker: Worker, data: dict):
+    if (type(data) != dict):
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid request"})
+    
     chunk_id = data.get("chunk_id", None)
     file_id = data.get("file_id", None)
 
@@ -306,6 +310,9 @@ def upload_chunk(worker: Worker, data: dict):
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!", "chunk_id": chunk_id})
 
 def detach_chunk(worker: Worker, data: dict):
+    if (type(data) != dict):
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid request"})
+    
     chunk_id = data["chunk_id"]
     with state.chunks[chunk_id].get_lock():
         if (chunk_id in worker.get_file_handles()):
@@ -341,11 +348,12 @@ async def handler(websocket: ServerConnection):
                 response = detach_chunk(worker, message.get_payload())
             await websocket.send(response.encode())
         except Exception as e:
+            if (worker):
+                state.remove_worker(worker.get_id())
             try:
                 await websocket.close()
             except:
                 pass
-            state.remove_worker(worker.get_id())
             return
 
 gc_thread = Thread(target=background_coordinator)
