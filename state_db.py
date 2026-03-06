@@ -43,6 +43,8 @@ class StateDB:
 
     # now comes business logic
 
+    # startup / batch fetching
+
     def get_files(self) -> list[dict]:
         with self._conn:
             cur = self._conn.execute("SELECT * FROM file")
@@ -72,6 +74,34 @@ class StateDB:
         with self._conn:
             cur = self._conn.execute("SELECT * FROM leaderboard ORDER BY downloaded_bytes DESC")
             return cur.fetchall()
+
+    # leaderboard mutations
+
+    def insert_leaderboard_entry(self, discord_id: str, discord_username: str, avatar_url: str):
+        def write(conn):
+            with conn:
+                cur = conn.execute(
+                    "INSERT INTO leaderboard (discord_id, discord_username, avatar_url) "
+                    "VALUES (?, ?, ?) "
+                    "ON CONFLICT (discord_id) DO NOTHING",
+                    (discord_id, discord_username, avatar_url)
+                )
+                return cur.fetchone()
+        return self._write(write)
+
+    def update_leaderboard_downloaded_bytes(self, discord_id: str, change: int):
+        def write(conn):
+            with conn:
+                cur = conn.execute("UPDATE leaderboard SET downloaded_bytes = downloaded_bytes + ? WHERE discord_id = ?", (change, discord_id))
+                return cur.fetchone()
+        return self._write(write)
+
+    def update_leaderboard_downloaded_chunks(self, discord_id: str, change: int):
+        def write(conn):
+            with conn:
+                cur = conn.execute("UPDATE leaderboard SET downloaded_chunks = downloaded_chunks + ? WHERE discord_id = ?", (change, discord_id))
+                return cur.fetchone()
+        return self._write(write)
 
 
 # global singleton and we'll just use the hardcoded filename here

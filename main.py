@@ -17,6 +17,7 @@ from helpers import get_chunk_instance_temp_path, get_chunk_path, get_url_size
 
 import argparse
 
+from state_db import db
 from workers import Worker
 from ws_message import WSMessage, WSMessageType
 from websockets.asyncio.server import serve
@@ -63,8 +64,8 @@ def register_worker(ip: str, data: dict):
     with state.workers_lock:
         state.workers[worker_id] = Worker(worker_id, ip, data["max_concurrent"], discord_id)
     if (discord_id and not discord_id in state.current_leaderboard):
-        with state.current_leaderboard_lock:
-            state.current_leaderboard[discord_id] = state.LeaderboardObject(discord_id, discord_username, avatar_url, 0, 0)
+        state.current_leaderboard[discord_id] = state.LeaderboardObject(discord_id, discord_username, avatar_url, 0, 0)
+        db.insert_leaderboard_entry(discord_id, discord_username, avatar_url)
 
     return WSMessage(WSMessageType.REGISTER_RESPONSE, {
         "worker_id": worker_id,

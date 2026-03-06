@@ -95,9 +95,11 @@ class LeaderboardObject():
     
     def update_downloaded_bytes(self, change: int):
         self._downloaded_bytes += change
+        db.update_leaderboard_downloaded_bytes(self._discord_id, change)
     
     def update_downloaded_chunks(self, change: int):
         self._downloaded_chunks += change
+        db.update_leaderboard_downloaded_chunks(self._discord_id, change)
 
 
 global current_leaderboard
