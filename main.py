@@ -350,6 +350,8 @@ async def handler(websocket: ServerConnection):
                 response = detach_chunk(worker, message.get_payload())
             await websocket.send(response.encode())
         except Exception as e:
+            print(e)
+            print(f"Disconnecting worker {worker.get_id()} due to error.")
             if (worker):
                 state.remove_worker(worker.get_id())
             try:
