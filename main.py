@@ -5,7 +5,7 @@ from threading import Thread
 from uuid import uuid4
 
 import requests
-from websockets import ConnectionClosedError, ConnectionClosedOK, ServerConnection
+from websockets import ConnectionClosedError, ConnectionClosedOK, InvalidUpgrade, ServerConnection
 from console import Console
 from files import HyperscrapeChunk
 from background_coordinator_thread import background_coordinator
@@ -355,6 +355,8 @@ async def handler(websocket: ServerConnection):
             elif (message.get_type() == WSMessageType.DETACH_CHUNK):
                 response = detach_chunk(worker, message.get_payload())
             await websocket.send(response.encode())
+        except InvalidUpgrade:
+            return # What even causes this lol
         except Exception as e:
             print(e)
             if (worker):
