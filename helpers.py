@@ -1,6 +1,5 @@
 import os
 import requests
-from auth_token import AuthToken
 import state
 
 from workers import Worker

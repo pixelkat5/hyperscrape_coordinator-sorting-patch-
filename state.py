@@ -7,7 +7,6 @@ import os
 from threading import Lock
 import time
 from uuid import uuid4
-from auth_token import AuthToken
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from workers import Worker
 from msgspec import json

@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import requests
 from websockets import ConnectionClosedError, ConnectionClosedOK, ServerConnection
-from auth_token import AuthToken
 from console import Console
 from files import HyperscrapeChunk
 from background_coordinator_thread import background_coordinator
@@ -61,16 +60,14 @@ def register_worker(ip: str, data: dict):
 
     
     worker_id = str(uuid4())
-    auth_token = AuthToken(worker_id)
     with state.workers_lock:
-        state.workers[worker_id] = Worker(worker_id, ip, auth_token.nonce, data["max_concurrent"], discord_id)
+        state.workers[worker_id] = Worker(worker_id, ip, data["max_concurrent"], discord_id)
     if (discord_id and not discord_id in state.current_leaderboard):
         with state.current_leaderboard_lock:
             state.current_leaderboard[discord_id] = state.LeaderboardObject(discord_id, discord_username, avatar_url, 0, 0)
 
     return WSMessage(WSMessageType.REGISTER_RESPONSE, {
         "worker_id": worker_id,
-        "auth_token": auth_token.as_token()
     })
 
 def get_chunks(worker: Worker, data: dict):
@@ -314,6 +311,9 @@ def detach_chunk(worker: Worker, data: dict):
         return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Invalid request"})
     
     chunk_id = data["chunk_id"]
+    if (not chunk_id in state.chunks):
+        return WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "No such chunk"})
+    
     with state.chunks[chunk_id].get_lock():
         if (chunk_id in worker.get_file_handles()):
             worker.close_file_handle(chunk_id)
