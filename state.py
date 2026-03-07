@@ -1,6 +1,7 @@
 ###
 # Global state vars
 ###
+import traceback
 from tqdm import tqdm
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from collections import defaultdict
@@ -284,7 +285,7 @@ def load_state_from_db():
             db_file["size"],
             db_file["url"],
             db_file["chunk_size"],
-            file_chunks.get(set(db_file["id"]), set()),
+            set(file_chunks.get(db_file["id"], [])),
             bool(db_file["complete"]),
         )
 
@@ -346,4 +347,5 @@ def load_state():
     except Exception as e:
         print("NOTE: Could not load previous file state:")
         print(e)
+        traceback.print_exc()
 load_state()
