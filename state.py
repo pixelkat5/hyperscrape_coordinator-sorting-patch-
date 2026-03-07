@@ -284,7 +284,7 @@ def load_state_from_db():
             db_file["size"],
             db_file["url"],
             db_file["chunk_size"],
-            file_chunks.get(db_file["id"], set()),
+            file_chunks.get(set(db_file["id"]), set()),
             bool(db_file["complete"]),
         )
 

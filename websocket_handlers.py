@@ -105,7 +105,7 @@ def get_chunks(worker: Worker, data: dict) -> WSMessage:
             # Cleanup workers that have not uploaded in a while
             state.cleanup_chunk_workers(chunk_id)
             has_worker_ip = False # We ensure the same IP isn't assigned the same file!
-            with state.workers_lock:
+            with state.chunks[chunk_id].get_lock():
                 for worker_id in state.chunks[chunk_id].get_workers():
                     # Chunk statuses may contain completed worker chunk instances from workers that are NO LONGER connected
                     if (not worker_id in state.workers):

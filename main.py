@@ -15,6 +15,8 @@ from ws_message import WSMessage, WSMessageType
 from fastapi.responses import HTMLResponse
 from workers import Worker
 
+import traceback
+
 print("=========================")
 print("=  HYPERSCRAPE SERVER   =")
 print("= Created By Hackerdude =")
@@ -84,6 +86,7 @@ async def handler(websocket: WebSocket, ip_address: str):
             if (worker):
                 print(f"Disconnecting worker {worker.get_id()} due to exception.")
                 print(e)
+                traceback.print_exc()
                 await state.remove_worker(worker.get_id())
                 return
 
