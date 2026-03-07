@@ -359,7 +359,6 @@ def load_state():
                             downloaded_bytes += chunks[chunk_id].get_end() - chunks[chunk_id].get_start()
                         else:
                             assigned_chunks += 1
-            del file
         if (generated_chunks > 0):
             print(f"NOTE: Generated {generated_chunks} new chunks!")
         print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
