@@ -149,7 +149,7 @@ def get_chunks(worker: Worker, data: dict):
                 state.chunks[chunk_id].get_worker_status(worker.get_id()).set_hash_only(False)
         response[chunk_id] = {
             "file_id": chunk_to_file[chunk_id],
-            "url": urllib.parse.quote(file.get_url()),
+            "url": file.get_url().replace('#', '%23'), # Fix URLs, hackish
             "range": [
                 chunk.get_start(),
                 chunk.get_end()
