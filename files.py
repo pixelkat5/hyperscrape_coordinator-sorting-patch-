@@ -12,17 +12,8 @@ class WorkerStatus():
         self._uploaded: int = uploaded
         self._complete: bool = complete
         self._hash: str|None = hash
-        self._complete: bool = False
-        self._hash: str|None = None
         self._hash_only: bool = True # Whether this worker uploaded data that was ONLY hashed, by default we don't actually write downloaded data!
         self._lock: Lock = Lock()
-
-    def __getstate__(self):
-        return (self._last_updated, self._uploaded, self._complete, self._hash)
-    
-    def __setstate__(self, state):
-        self._last_updated, self._uploaded, self._complete, self._hash = state
-        self._lock = Lock()
 
     def get_last_updated(self):
         return self._last_updated
@@ -69,13 +60,6 @@ class HyperscrapeChunk():
         self._start: int = start
         self._end: int = end
         self._worker_status: dict[str, WorkerStatus] = worker_status
-
-    def __getstate__(self):
-        return (self._chunk_id, self._start, self._end, self._worker_status)
-    
-    def __setstate__(self, state):
-        self._chunk_id, self._start, self._end, self._worker_status = state
-        self._lock = Lock()
 
     def get_id(self) -> str:
         return self._chunk_id
@@ -138,13 +122,6 @@ class HyperscrapeFile():
         self._chunk_size: int = chunk_size
         self._chunks: set[str] = chunks
         self._complete: bool = complete # will need to re-init from database
-
-    def __getstate__(self):
-        return (self._file_id, self._file_path, self._total_size, self._url, self._chunk_size, self._chunks, self._complete)
-    
-    def __setstate__(self, state):
-        self._file_id, self._file_path, self._total_size, self._url, self._chunk_size, self._chunks, self._complete = state
-        self._lock = Lock()
 
     def get_id(self) -> str:
         return self._file_id

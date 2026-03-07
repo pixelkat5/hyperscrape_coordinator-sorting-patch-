@@ -1,80 +1,62 @@
--- only for one time db init here
-
--- this schema is not very normalized for easier old state compatibility
-
-create table if not exists file
+CREATE TABLE IF NOT EXISTS file
 (
-    id         text    not null
-        constraint file_pk
-            unique,
-    path       text    not null,
-    size       integer,
-    url        text    not null,
-    chunk_size integer not null,
-    complete   integer not null default 0
+    id         TEXT     PRIMARY KEY NOT NULL,
+    path       TEXT     NOT NULL,
+    size       INTEGER,
+    url        TEXT     NOT NULL,
+    chunk_size INTEGER  NOT NULL,
+    complete   INTEGER  NOT NULL DEFAULT 0
 );
 
-create index if not exists file_path_index
+CREATE INDEX IF NOT EXISTS file_path_index
     on file (path);
 
-create table if not exists chunk
+CREATE TABLE IF NOT EXISTS chunk
 (
-    id      text    not null
-        constraint chunk_pk
-            unique,
-    file_id text    not null
-        constraint chunk_file_id_fk
-            references file (id),
-    start   integer not null,
-    end     integer not null
+    id          TEXT    PRIMARY KEY NOT NULL,
+    file_id     TEXT    NOT NULL REFERENCES file(id),
+    start       INTEGER NOT NULL,
+    end         INTEGER NOT NULL
 );
 
-create index if not exists chunk_file_id_index
+CREATE INDEX IF NOT EXISTS chunk_file_id_index
     on chunk (file_id);
 
-create table if not exists worker
+CREATE TABLE IF NOT EXISTS worker_status
 (
-    id           integer primary key,
-    chunk_id     text    not null
-        constraint worker_chunk_id_fk
-            references chunk (id)
-            on delete cascade,
-    worker_id    text    not null,
-    last_updated integer not null,
-    uploaded     integer not null default 0,
-    complete     integer not null default 0,
-    hash         text
+    worker_id       TEXT        NOT NULL,
+    chunk_id        TEXT        NOT NULL,
+    last_updated    INTEGER     NOT NULL,
+    uploaded        INTEGER     NOT NULL,
+    complete        INTEGER     NOT NULL,
+    hash            TEXT,                   -- Can be null
+    hash_only       INTEGER     NOT NULL,
+    PRIMARY KEY (worker_id, chunk_id)
+)
+
+CREATE INDEX IF NOT EXISTS worker_status_index
+    on worker_status (worker_id);
+
+CREATE INDEX IF NOT EXISTS worker_status_index
+    on worker_status (chunk_id);
+
+CREATE TABLE IF NOT EXISTS file_hash
+(
+    file_id         TEXT NOT NULL UNIQUE REFERENCES file(id),
+    md5             TEXT NOT NULL,
+    sha1            TEXT NOT NULL,
+    sha256          TEXT NOT NULL
 );
 
-create index if not exists worker_chunk_id_index
-    on worker (chunk_id);
-
-create index if not exists worker_worker_id_index
-    on worker (worker_id);
-
-create table if not exists file_hash
-(
-    file_id text not null
-        constraint file_hash_pk
-            unique
-        constraint file_hash_file_id_fk
-            references file (id),
-    md5     text not null,
-    sha1    text not null,
-    sha256  text not null
-);
-
-create index if not exists file_hash_file_id_index
+CREATE INDEX IF NOT EXISTS file_hash_file_id_index
     on file_hash (file_id);
 
-create table if not exists leaderboard
+CREATE TABLE IF NOT EXISTS leaderboard
 (
-    discord_id        text    not null
-        constraint leaderboard_pk
-            unique,
-    discord_username  text    not null,
-    avatar_url        text,
-    downloaded_chunks integer not null default 0,
-    downloaded_bytes  integer not null default 0
+    discord_id        TEXT      PRIMARY KEY NOT NULL,
+    discord_username  TEXT      NOT NULL,
+    avatar_url        TEXT, -- Nullable
+    downloaded_chunks INTEGER NOT NULL DEFAULT 0,
+    downloaded_bytes  INTEGER NOT NULL DEFAULT 0
 );
 
