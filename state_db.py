@@ -30,6 +30,9 @@ class StateDB:
     def _configure(conn: sqlite3.Connection):
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = normal")
+        conn.execute("PRAGMA page_size = 8192")
+        conn.execute("PRAGMA journal_size_limit = 6144000")
         conn.row_factory = sqlite3.Row
 
     def _write(self, fn: Callable[[sqlite3.Connection], Any]):
@@ -147,9 +150,9 @@ class StateDB:
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "INSERT INTO worker_status (chunk_id, worker_id, last_updated, uploaded, hash, hash_only) "
-                    "VALUES (?, ?, ?)",
-                    (chunk_id, worker_id, int(time.time()), uploaded, hash, hash_only)
+                    "INSERT OR REPLACE INTO worker_status (chunk_id, worker_id, uploaded, hash, hash_only) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (chunk_id, worker_id, uploaded, hash, hash_only)
                 )
                 return cur.fetchone()
         return self._write(write)
@@ -170,16 +173,6 @@ class StateDB:
                 cur = conn.execute(
                     "DELETE FROM worker_status WHERE chunk_id = ?",
                     (chunk_id, worker_id)
-                )
-                return cur.fetchone()
-        return self._write(write)
-
-    def mark_worker_status_updated(self, chunk_id: str, worker_id: str):
-        def write(conn):
-            with conn:
-                cur = conn.execute(
-                    "UPDATE worker_status SET last_updated = ? WHERE chunk_id = ? AND worker_id = ?",
-                    (int(time.time()), chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)
@@ -229,14 +222,14 @@ class StateDB:
 
     # leaderboard mutations
 
-    def insert_leaderboard_entry(self, discord_id: str, discord_username: str, avatar_url: str):
+    def insert_leaderboard_entry(self, discord_id: str, discord_username: str, avatar_url: str, downloaded_chunks: int = 0, downloaded_bytes: int = 0):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "INSERT INTO leaderboard (discord_id, discord_username, avatar_url) "
-                    "VALUES (?, ?, ?) "
+                    "INSERT INTO leaderboard (discord_id, discord_username, avatar_url, downloaded_chunks, downloaded_bytes) "
+                    "VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT (discord_id) DO NOTHING",
-                    (discord_id, discord_username, avatar_url)
+                    (discord_id, discord_username, avatar_url, downloaded_chunks, downloaded_bytes)
                 )
                 return cur.fetchone()
         return self._write(write)

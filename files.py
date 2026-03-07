@@ -42,7 +42,6 @@ class HyperscrapeChunk():
     
     def add_worker_status(self, worker_id: str):
         self._worker_status[worker_id] = WorkerStatus()
-        db.insert_worker_status(self._chunk_id, worker_id, self._worker_status[worker_id]._uploaded, self._worker_status[worker_id]._hash, self._worker_status[worker_id]._hash_only)
 
     def has_worker(self, worker_id: str):
         return worker_id in self._worker_status
@@ -60,14 +59,13 @@ class HyperscrapeChunk():
         with self.get_status_lock(worker_id):
             self.set_status_uploaded(uploaded)
             self.mark_status_updated(worker_id)
-            db.mark_worker_status_updated(self._chunk_id)
 
     def mark_worker_status_complete(self, worker_id: str, hash: str):
         with self.get_status_lock(worker_id):
             self.mark_status_complete(worker_id, hash)
             self.mark_status_updated(worker_id)
-            db.set_worker_status_hash(self._chunk_id, worker_id, hash)
-            db.mark_worker_status_updated(self._chunk_id) # @TODO: Single query?
+            # The database MUST ONLY store already completed statuses
+            db.insert_worker_status(self._chunk_id, worker_id, self._worker_status[worker_id]._uploaded, self._worker_status[worker_id]._hash, self._worker_status[worker_id]._hash_only)
 
     def remove_worker_status(self, worker_id: str):
         if (worker_id in self._worker_status):
@@ -86,7 +84,6 @@ class HyperscrapeChunk():
     
     def mark_status_updated(self, worker_id: str):
         self._worker_status[worker_id]._last_updated = time.time()
-        db.mark_worker_status_updated(self._chunk_id, worker_id)
     
     def get_status_uploaded(self, worker_id: str):
         return self._worker_status[worker_id]._uploaded

@@ -207,17 +207,20 @@ def load_state_from_db():
     # build file chunks as we build chunks list
     file_chunks: dict[str, set[str]] = defaultdict(set)
 
+    current_time = time.time()
     # rebuild chunks from db
     db_chunks = db.get_chunks()
     for db_chunk in db_chunks:
         db_worker_statuses = db.get_chunk_worker_status(db_chunk["id"])
         worker_status: dict[str, WorkerStatus] = {}
         for db_worker_status in db_worker_statuses:
+            if (not db_worker_status["hash"]):
+                continue # No hash - no need for this status
             worker_status[db_worker_status["worker_id"]] = WorkerStatus(
                 db_worker_status["uploaded"],
                 db_worker_status["hash"],
                 db_worker_status["hash_only"],
-                db_worker_status["last_updated"],
+                current_time # Yeah so this doesn't actually matter all that much
             )
         chunk = HyperscrapeChunk(
             db_chunk["id"],

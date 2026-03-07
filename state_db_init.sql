@@ -29,9 +29,8 @@ CREATE TABLE IF NOT EXISTS worker_status
     uploaded        INTEGER     NOT NULL,
     hash            TEXT,                   -- Can be null
     hash_only       INTEGER     NOT NULL,
-    last_updated    INTEGER     NOT NULL,
     PRIMARY KEY (chunk_id, worker_id)
-)
+);
 
 CREATE INDEX IF NOT EXISTS worker_status_chunk_index
     on worker_status (chunk_id);
