@@ -11,8 +11,8 @@ parser = argparse.ArgumentParser(
                     prog='Filelist Generator',
                     description='Generates a filelist for Hyperscrape\'s coordinator',
                     epilog='Created by Hackerdude for Minerva')
-parser.add_argument("myrient_index", help="Path to the index to generate file objects for", type=argparse.FileType('r'))
-parser.add_argument("--ignore_file_list", help="Path to a list of files to ignore (in find command output format)", type=argparse.FileType('r'), action='append')
+parser.add_argument("myrient_index", help="Path to the index to generate file objects for", type=argparse.FileType('r', encoding='utf-8'))
+parser.add_argument("--ignore_file_list", help="Path to a list of files to ignore (in find command output format)", type=argparse.FileType('r', encoding='utf-8'), action='append')
 parser.add_argument("-r", "--reset", help="Reset and clear filelist", action="store_true")
 args = parser.parse_args()
 

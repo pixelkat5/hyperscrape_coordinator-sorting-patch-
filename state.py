@@ -145,6 +145,8 @@ def save_leaderboard_state():
             pickle.dump(current_leaderboard, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 def save_data_files():
+    # for now just short circuit this to avoid changing too many places
+    return
     save_chunk_state()
     save_file_state()
     save_file_hashes()

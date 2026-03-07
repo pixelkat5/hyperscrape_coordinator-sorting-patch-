@@ -193,12 +193,12 @@ class StateDB:
                 return cur.fetchone()
         return self._write(write)
 
-    def set_worker_complete(self, chunk_id: str, worker_id: str):
+    def set_worker_complete(self, chunk_id: str, worker_id: str, hash: str):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "UPDATE worker SET complete = 1 WHERE chunk_id = ? AND worker_id = ?",
-                    (chunk_id, worker_id)
+                    "UPDATE worker SET complete = 1, hash = ?, last_updated = ? WHERE chunk_id = ? AND worker_id = ?",
+                    (hash, int(time.time()), chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)
