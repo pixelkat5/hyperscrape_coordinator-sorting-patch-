@@ -19,7 +19,6 @@ class Console():
             "list-downloadable": [self.list_downloadable, "List downloadable files"],
             "get-chunk": [self.get_chunk, "Get chunk info (specify chunk id as second arg)"],
             "reload-files": [self.reload_files, "Reload files (WARN: EXPERIMENTAL!)"],
-            "save": [self.save, "Save current info"],
             "quit": [self.quit, "Shutdown the server"]
         }
 
@@ -110,11 +109,5 @@ class Console():
         for worker_id in list(state.workers.keys()):
             state.remove_worker(worker_id)
         print("Done!")
-        print("Saving state...")
-        state.save_data_files()
         print("Quitting!")
         os._exit(0)
-
-    def save(self, argv):
-        print("Saving state...")
-        state.save_data_files()

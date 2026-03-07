@@ -12,6 +12,5 @@ def background_coordinator():
             last_downloaded = state.downloaded_bytes
             last_stat_calc_time = current
         if (current - last_save_time > 600): # Save every 10 minutes
-            state.save_data_files()
             last_save_time = current
         time.sleep(1)

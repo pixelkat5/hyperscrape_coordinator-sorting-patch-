@@ -78,6 +78,3 @@ for file_path in tqdm(full_list):
     )
     state.file_worker_counts[file_id] = 0
     state.sorted_downloadable_files.append(file_id)
-
-print("Saving data files...")
-state.save_data_files()
