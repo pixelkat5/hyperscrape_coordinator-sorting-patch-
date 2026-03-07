@@ -203,6 +203,16 @@ class StateDB:
                 )
                 return cur.fetchone()
         return self._write(write)
+    
+    def set_worker_status_hash_only(self, chunk_id: str, worker_id: str, hash_only: bool):
+        def write(conn):
+            with conn:
+                cur = conn.execute(
+                    "UPDATE worker SET hash_only = ? WHERE chunk_id = ? AND worker_id = ?",
+                    (hash_only, chunk_id, worker_id)
+                )
+                return cur.fetchone()
+        return self._write(write)
 
     # file hash mutations
 

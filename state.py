@@ -33,13 +33,11 @@ global chunks
 global file_chunk_count
 global file_worker_count
 global sorted_files
-global file_hashes
 workers: dict[str, Worker] = {}
 files: dict[str, HyperscrapeFile] = {}
 chunks: dict[str, HyperscrapeChunk] = {}
 file_worker_counts: dict[str, int] = {} # Count how many workers are using each file
 sorted_downloadable_files: list[str] = [] # List of files to be downloaded sorted by how many workers are using it
-file_hashes: dict[str, dict[str, str]] = {}
 
 global workers_lock
 global files_lock
@@ -142,7 +140,7 @@ def add_file(file: HyperscrapeFile, defer_save: bool = False):
         db.insert_file(file.get_id(), file.get_path(), file.get_total_size(), file.get_url(), file.get_chunk_size())
 
 # Workers
-def remove_worker(worker_id: str):
+async def remove_worker(worker_id: str):
     global assigned_chunks
     global workers_lock
     global workers
@@ -151,7 +149,7 @@ def remove_worker(worker_id: str):
         if (worker_id in workers):
             with workers[worker_id].get_lock():
                 try:
-                    workers[worker_id].get_websocket().close()
+                    workers[worker_id].get_websocket().close() # @TODO - Fix this
                 except:
                     pass
                 for chunk_id in list(workers[worker_id].get_file_handles().keys()):
@@ -201,12 +199,10 @@ def cleanup_chunk_workers(chunk_id: str):
 
 def load_state_from_db():
     global files
-    global file_hashes
     global chunks
     global current_leaderboard
 
     files = {}
-    file_hashes = {}
     chunks = {}
     current_leaderboard = {}
 
@@ -247,15 +243,6 @@ def load_state_from_db():
             bool(db_file["complete"]),
         )
 
-    # rebuild file_hashes from db
-    db_hashes = db.get_file_hashes()
-    for db_hash in db_hashes:
-        file_hashes[db_hash["path"]] = {
-            "md5": db_hash["md5"],
-            "sha1": db_hash["sha1"],
-            "sha256": db_hash["sha256"],
-        }
-
     # rebuild current_leaderboard from db
     db_leaderboard = db.get_leaderboard()
     for db_entry in db_leaderboard:
@@ -270,7 +257,6 @@ def load_state_from_db():
 def load_state():
     global files_lock
     global files
-    global file_hashes
     global chunks_lock
     global chunks
     global current_leaderboard_lock

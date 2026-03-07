@@ -2,6 +2,8 @@ from io import FileIO
 import time
 from threading import Lock
 
+from fastapi import WebSocket
+
 class Worker():
     def __init__(self, worker_id: str, ip: str, max_concurrent: int, discord_id: str|None):
         self._file_handles: dict[str, FileIO] = {} # File handles for each chunk this worker is uploading
@@ -15,10 +17,10 @@ class Worker():
         self._discord_id = discord_id
         self._lock = Lock()
 
-    def get_websocket(self):
+    def get_websocket(self) -> WebSocket:
         return self._websocket
     
-    def set_websocket(self, websocket):
+    def set_websocket(self, websocket: WebSocket):
         self._websocket = websocket
 
     def get_chunk_hashes(self):

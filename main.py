@@ -308,12 +308,7 @@ def upload_chunk(worker: Worker, data: dict):
                 os.remove(chunk_file_path)
         os.replace(destination_path + ".partial", destination_path)
         state.sorted_downloadable_files.remove(chunk_file_object.get_id()) # We don't want to download this again
-        # write hashes to file
-        state.file_hashes[chunk_file_object.get_path()] = {
-            "md5": md5_hash.hexdigest(),
-            "sha1": sha1_hash.hexdigest(),
-            "sha256": sha256_hash.hexdigest()
-        }
+        # Write hashes to db
         db.insert_file_hash(
             chunk_file_object.get_id(),
             md5_hash.hexdigest(),
@@ -328,7 +323,6 @@ def upload_chunk(worker: Worker, data: dict):
                 with state.chunks[chunk_id].get_lock():
                     del state.chunks[chunk_id]
                     db.delete_chunk(chunk_id)
-        chunk_file_object.clear_chunks()
     
     state.completed_files += 1
     return WSMessage(WSMessageType.OK_RESPONSE, {"ok": "Upload entire file complete!", "chunk_id": chunk_id})

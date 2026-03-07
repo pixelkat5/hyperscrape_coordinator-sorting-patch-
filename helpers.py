@@ -2,8 +2,6 @@ import os
 import requests
 import state
 
-from workers import Worker
-
 def get_url_size(url: str):
     try:
         return int(requests.head(url, headers={
