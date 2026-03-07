@@ -1,6 +1,7 @@
 ###
 # Global state vars
 ###
+import tqdm
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from collections import defaultdict
 from threading import Lock
@@ -320,7 +321,7 @@ def load_state():
     try:
         load_state_from_db()
         print("Generating files to download...")
-        for file_id in files:
+        for file_id in tqdm(files):
             file = files[file_id]
             total_bytes += file.get_total_size() * config["general"]["trust_count"]
 

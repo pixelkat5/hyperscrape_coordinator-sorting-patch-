@@ -120,7 +120,7 @@ class WSMessage():
                 encoded.add_string(self._payload[key])
         return encoded.get_buffer()
     
-    def decode(encoded: bytes) -> WSMessage:
+    def decode(encoded: bytes):
         """!
         @brief Decode bytes from a message into a WSMessage object
 
