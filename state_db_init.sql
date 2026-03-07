@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS chunk
     id          TEXT    PRIMARY KEY NOT NULL,
     file_id     TEXT    NOT NULL REFERENCES file(id),
     start       INTEGER NOT NULL,
-    end         INTEGER NOT NULL
+    end         INTEGER NOT NULL,
+    UNIQUE(file_id, start)
 );
 
 CREATE INDEX IF NOT EXISTS chunk_file_id_index

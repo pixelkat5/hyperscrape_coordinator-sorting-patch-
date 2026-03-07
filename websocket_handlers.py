@@ -88,39 +88,34 @@ def get_chunks(worker: Worker, data: dict) -> WSMessage:
             file.set_total_size(get_url_size(file.get_url()))
 
         # If the file hasn't generated chunks then we need to do that!
-        if (len(file.get_chunks()) == 0):
-            current_size = 0
-            with state.chunks_lock:
-                while current_size < file.get_total_size():
-                    start = current_size
-                    end = min(current_size + file.get_chunk_size(), file.get_total_size())
-                    chunk_id = str(uuid4())
-                    state.chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
-                    file.add_chunk(chunk_id)
-                    db.insert_chunk(chunk_id, file_id, start, end)
-                    current_size = end
-        
-        # Ensure the worker isn't currently downloading this file
-        for chunk_id in file.get_chunks():
-            # Cleanup workers that have not uploaded in a while
-            state.cleanup_chunk_workers(chunk_id)
-            has_worker_ip = False # We ensure the same IP isn't assigned the same file!
-            with state.chunks[chunk_id].get_lock():
-                for worker_id in state.chunks[chunk_id].get_workers():
-                    # Chunk statuses may contain completed worker chunk instances from workers that are NO LONGER connected
-                    if (not worker_id in state.workers):
-                        continue
-                    if (state.workers[worker_id].get_ip() == worker.get_ip()):
-                        has_worker_ip = True # Another worker on the same IP has this file, don't assign it
-                        break
+        with file.get_lock():
+            if (len(file.get_chunks()) == 0):
+                print("[ERR] A FILE WAS FOUND WITH NO CHUNKS!")
+                print("THIS SHOULD BE IMPOSSIBLE!")
+                print(f"File ID: {file.get_id()}")
+                continue # This SHOULD be IMPOSSIBLE
+            
+            # Ensure the worker isn't currently downloading this file
+            for chunk_id in file.get_chunks():
+                # Cleanup workers that have not uploaded in a while
+                state.cleanup_chunk_workers(chunk_id)
+                has_worker_ip = False # We ensure the same IP isn't assigned the same file!
+                with state.chunks[chunk_id].get_lock():
+                    for worker_id in state.chunks[chunk_id].get_workers():
+                        # Chunk statuses may contain completed worker chunk instances from workers that are NO LONGER connected
+                        if (not worker_id in state.workers):
+                            continue
+                        if (state.workers[worker_id].get_ip() == worker.get_ip()):
+                            has_worker_ip = True # Another worker on the same IP has this file, don't assign it
+                            break
 
-            if (has_worker_ip or # Worker on the same IP...
-                (
-                    state.chunks[chunk_id].has_worker(worker.get_id()) and # Or worker on the same chunk
-                    not state.chunks[chunk_id].get_worker_complete(worker.get_id()) # That isn't complete... (since we allow re-assignment of the same file (but a differnet chunk) once the file is complete!) @TODO: Redundant checks?
-                )):
-                downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
-                break
+                if (has_worker_ip or # Worker on the same IP...
+                    (
+                        state.chunks[chunk_id].has_worker(worker.get_id()) and # Or worker on the same chunk
+                        not state.chunks[chunk_id].get_worker_complete(worker.get_id()) # That isn't complete... (since we allow re-assignment of the same file (but a differnet chunk) once the file is complete!) @TODO: Redundant checks?
+                    )):
+                    downloading_file_already = True # If worker is CURRENTLY downloading this FILE then we skip the entire file
+                    break
         
         if (downloading_file_already):
             continue

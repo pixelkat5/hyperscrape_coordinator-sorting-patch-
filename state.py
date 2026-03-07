@@ -2,6 +2,7 @@
 # Global state vars
 ###
 import traceback
+from uuid import uuid4
 from tqdm import tqdm
 from files import HyperscrapeChunk, HyperscrapeFile, WorkerStatus
 from collections import defaultdict
@@ -319,12 +320,27 @@ def load_state():
     global downloaded_bytes
     global assigned_chunks
     print("Loading current state...")
+    generated_chunks = 0
     try:
         load_state_from_db()
         print("Generating files to download...")
         for file_id in tqdm(files):
             file = files[file_id]
             total_bytes += file.get_total_size() * config["general"]["trust_count"]
+
+            # Regenerate chunks as needed
+            if (len(file.get_chunks()) == 0):
+                current_size = 0
+                with chunks_lock:
+                    while current_size < file.get_total_size():
+                        start = current_size
+                        end = min(current_size + file.get_chunk_size(), file.get_total_size())
+                        chunk_id = str(uuid4())
+                        chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
+                        file.add_chunk(chunk_id)
+                        db.insert_chunk(chunk_id, file_id, start, end)
+                        current_size = end
+                        generated_chunks += 1
 
             if (file.get_complete()):
                 completed_files += 1
@@ -343,6 +359,8 @@ def load_state():
                         else:
                             assigned_chunks += 1
             del file
+        if (generated_chunks > 0):
+            print(f"NOTE: Generated {generated_chunks} new chunks!")
         print(f"Server has {len(files)} files - of which {len(sorted_downloadable_files)} will be downloaded")
     except Exception as e:
         print("NOTE: Could not load previous file state:")
