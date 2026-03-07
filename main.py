@@ -91,7 +91,7 @@ def get_chunks(worker: Worker, data: dict):
                     chunk_id = str(uuid4())
                     state.chunks[chunk_id] = HyperscrapeChunk(chunk_id, start, end)
                     file.add_chunk(chunk_id)
-                    db.insert_chunk(file_id, chunk_id, start, end)
+                    db.insert_chunk(chunk_id, file_id, start, end)
                     current_size = end
         
         # Ensure the worker isn't currently downloading this file

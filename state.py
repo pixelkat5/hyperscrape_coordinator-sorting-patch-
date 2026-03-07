@@ -117,11 +117,7 @@ def update_stats_bytes(discord_id: str, byte_count: int):
 
 def update_stats_chunks(discord_id: str, chunk_count: int):
     current_leaderboard[discord_id].update_downloaded_chunks(chunk_count)
-
-def order_leaderboard():
-    global current_leaderboard_order
-    current_leaderboard_order = sorted(current_leaderboard, key=lambda key: current_leaderboard[key].get_downloaded_bytes(), reverse=True)
-
+    
 ###
 # State Files
 def save_file_state():

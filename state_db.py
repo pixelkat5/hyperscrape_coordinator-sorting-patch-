@@ -11,6 +11,7 @@ class StateDB:
         # we have multiple threads, so need to guarantee only one write at a time
         # sqlite is not thread safe and this is simpler than a writer queue
         # as of writing, it seems only main is writing the states during normal ops
+        # This is kinda slow but it should be fine for our use-case -HD
         self._local = threading.local()
         self._write_lock = threading.Lock()
         self._write_conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -61,14 +62,14 @@ class StateDB:
             cur = self._conn.execute("SELECT * FROM chunk WHERE file_id = ?", (file_id,))
             return cur.fetchall()
 
-    def get_workers_for_chunk(self, chunk_id: str) -> list[dict]:
+    def get_chunk_worker_status(self, chunk_id: str) -> list[dict]:
         with self._conn:
-            cur = self._conn.execute("SELECT * FROM worker WHERE chunk_id = ?", (chunk_id,))
+            cur = self._conn.execute("SELECT * FROM worker_status WHERE chunk_id = ?", (chunk_id,))
             return cur.fetchall()
 
     def get_file_hashes(self):
         with self._conn:
-            cur = self._conn.execute("SELECT path, md5, sha1, sha256 FROM file_hash JOIN main.file f on f.id = file_hash.file_id")
+            cur = self._conn.execute("SELECT path, md5, sha1, sha256 FROM file_hash JOIN file on file.id = file_hash.file_id")
             return cur.fetchall()
 
     def get_leaderboard(self):
@@ -121,13 +122,13 @@ class StateDB:
 
     # chunk / worker mutations
 
-    def insert_chunk(self, file_id: str, chunk_id: str, start: int, end: int):
+    def insert_chunk(self, chunk_id: str, file_id: str, start: int, end: int):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "INSERT INTO chunk (file_id, id, start, end) "
+                    "INSERT INTO chunk (id, file_id, start, end) "
                     "VALUES (?, ?, ?, ?)",
-                    (file_id, chunk_id, start, end)
+                    (chunk_id, file_id, start, end)
                 )
                 return cur.fetchone()
         return self._write(write)
@@ -142,63 +143,63 @@ class StateDB:
                 return cur.fetchone()
         return self._write(write)
 
-    def insert_worker(self, chunk_id: str, worker_id: str):
+    def insert_worker_status(self, chunk_id: str, worker_id: str, uploaded: int = 0, hash: str = "", hash_only: bool = True):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "INSERT INTO worker (chunk_id, worker_id, last_updated) "
+                    "INSERT INTO worker_status (chunk_id, worker_id, last_updated, uploaded, hash, hash_only) "
                     "VALUES (?, ?, ?)",
-                    (chunk_id, worker_id, int(time.time()))
+                    (chunk_id, worker_id, int(time.time()), uploaded, hash, hash_only)
                 )
                 return cur.fetchone()
         return self._write(write)
 
-    def delete_worker(self, chunk_id: str, worker_id: str):
+    def delete_worker_status(self, chunk_id: str, worker_id: str):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "DELETE FROM worker WHERE chunk_id = ? AND worker_id = ?",
+                    "DELETE FROM worker_status WHERE chunk_id = ? AND worker_id = ?",
+                    (chunk_id, worker_id)
+                )
+                return cur.fetchone()
+        return self._write(write)
+    
+    def delete_chunk_worker_status(self, chunk_id: str, worker_id: str):
+        def write(conn):
+            with conn:
+                cur = conn.execute(
+                    "DELETE FROM worker_status WHERE chunk_id = ?",
                     (chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)
 
-    def set_worker_last_updated(self, chunk_id: str, worker_id: str):
+    def mark_worker_status_updated(self, chunk_id: str, worker_id: str):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "UPDATE worker SET last_updated = ? WHERE chunk_id = ? AND worker_id = ?",
+                    "UPDATE worker_status SET last_updated = ? WHERE chunk_id = ? AND worker_id = ?",
                     (int(time.time()), chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)
 
-    def set_worker_uploaded(self, chunk_id: str, worker_id: str, uploaded: int):
+    def set_worker_status_uploaded(self, chunk_id: str, worker_id: str, uploaded: int):
         def write(conn):
             with conn:
                 cur = conn.execute(
-                    "UPDATE worker SET uploaded = ? WHERE chunk_id = ? AND worker_id = ?",
+                    "UPDATE worker_status SET uploaded = ? WHERE chunk_id = ? AND worker_id = ?",
                     (uploaded, chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)
 
-    def set_worker_hash(self, chunk_id: str, worker_id: str, hash: str):
+    def set_worker_status_hash(self, chunk_id: str, worker_id: str, hash: str):
         def write(conn):
             with conn:
                 cur = conn.execute(
                     "UPDATE worker SET hash = ? WHERE chunk_id = ? AND worker_id = ?",
                     (hash, chunk_id, worker_id)
-                )
-                return cur.fetchone()
-        return self._write(write)
-
-    def set_worker_complete(self, chunk_id: str, worker_id: str, hash: str):
-        def write(conn):
-            with conn:
-                cur = conn.execute(
-                    "UPDATE worker SET complete = 1, hash = ?, last_updated = ? WHERE chunk_id = ? AND worker_id = ?",
-                    (hash, int(time.time()), chunk_id, worker_id)
                 )
                 return cur.fetchone()
         return self._write(write)

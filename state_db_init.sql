@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS file
 (
     id         TEXT     PRIMARY KEY NOT NULL,
     path       TEXT     NOT NULL,
-    size       INTEGER,
+    size       INTEGER, -- Nullable at first
     url        TEXT     NOT NULL,
     chunk_size INTEGER  NOT NULL,
     complete   INTEGER  NOT NULL DEFAULT 0
@@ -24,21 +24,20 @@ CREATE INDEX IF NOT EXISTS chunk_file_id_index
 
 CREATE TABLE IF NOT EXISTS worker_status
 (
-    worker_id       TEXT        NOT NULL,
     chunk_id        TEXT        NOT NULL,
+    worker_id       TEXT        NOT NULL,
     last_updated    INTEGER     NOT NULL,
     uploaded        INTEGER     NOT NULL,
-    complete        INTEGER     NOT NULL,
     hash            TEXT,                   -- Can be null
     hash_only       INTEGER     NOT NULL,
-    PRIMARY KEY (worker_id, chunk_id)
+    PRIMARY KEY (chunk_id, worker_id)
 )
 
-CREATE INDEX IF NOT EXISTS worker_status_index
-    on worker_status (worker_id);
-
-CREATE INDEX IF NOT EXISTS worker_status_index
+CREATE INDEX IF NOT EXISTS worker_status_chunk_index
     on worker_status (chunk_id);
+
+CREATE INDEX IF NOT EXISTS worker_status_worker_index
+    on worker_status (worker_id);
 
 CREATE TABLE IF NOT EXISTS file_hash
 (

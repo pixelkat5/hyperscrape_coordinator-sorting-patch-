@@ -8,7 +8,6 @@ def background_coordinator():
     while True:
         current = time.time()
         if (current - last_stat_calc_time > 1):
-            state.order_leaderboard()
             state.current_speed = (state.downloaded_bytes - last_downloaded)/(current - last_stat_calc_time)
             last_downloaded = state.downloaded_bytes
             last_stat_calc_time = current
