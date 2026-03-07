@@ -35,7 +35,7 @@ async def handler(websocket: WebSocket, ip_address: str):
         # If the server is shutting down we shouldn't accept new connections and should terminate existing ones
         if (state.shutting_down):
             try:
-                websocket.send_bytes(WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Server is shutting down!"}).encode())
+                await websocket.send_bytes(WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Server is shutting down!"}).encode())
                 websocket.close()
             except:
                 pass
@@ -218,7 +218,8 @@ def slash_index(request: Request):
 def html_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+console.start()
 # Start the main app
-if __name__ == "__main__":
-    console.start()
-    uvicorn.run(app, host="0.0.0.0", port=state.config["server"]["port"], access_log=False)
+#if __name__ == "__main__":
+#    console.start()
+#    uvicorn.run(app, host="0.0.0.0", port=state.config["server"]["port"], access_log=False)
