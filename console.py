@@ -1,3 +1,4 @@
+import signal
 from threading import Thread
 from typing import Callable
 from state_db import db
@@ -123,6 +124,5 @@ class Console():
             state.remove_worker(worker_id)
         print("Closing database connection")
         db.close()
-        print("Done!")
-        print("Quitting!")
-        os._exit(0)
+        print("Quit!")
+        os.kill(os.getpid(), signal.SIGINT)
