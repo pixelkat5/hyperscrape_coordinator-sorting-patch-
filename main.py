@@ -36,7 +36,7 @@ async def handler(websocket: WebSocket, ip_address: str):
         if (state.shutting_down):
             try:
                 await websocket.send_bytes(WSMessage(WSMessageType.ERROR_RESPONSE, {"error": "Server is shutting down!"}).encode())
-                websocket.close()
+                await websocket.close()
             except:
                 pass
             return
@@ -51,7 +51,7 @@ async def handler(websocket: WebSocket, ip_address: str):
                 await websocket.send_bytes(b'\x00\x80\x05\x95G\x00\x00\x00\x00\x00\x00\x00}\x94\x8c\x05error\x94\x8c8Your worker is using a legacy protocol - PLEASE UPGRADE!\x94s.')
                 await websocket.close()
                 if (worker):
-                    state.remove_worker(worker.get_id())
+                    await state.remove_worker(worker.get_id())
                 return
             
             # Decode the messsage

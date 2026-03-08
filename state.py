@@ -169,23 +169,31 @@ async def remove_worker(worker_id: str) -> None:
     @param worker_id (str): The ID of the worker to remove
     """
     global assigned_chunks
-    global workers_lock
-    global workers
-    global chunks
     with workers_lock:
-        if (worker_id in workers):
-            with workers[worker_id].get_lock():
-                try:
-                    await workers[worker_id].get_websocket().close() # @TODO - Fix this
-                except:
-                    pass # This may fail and that's okay
-                for chunk_id in list(workers[worker_id].get_file_handles().keys()):
-                    workers[worker_id].close_file_handle(chunk_id)
-                    os.remove(workers[worker_id].get_file_path(chunk_id)) # Delete our partials
-                    workers[worker_id].remove_chunk_hash(chunk_id)
-                    chunks[chunk_id].remove_worker_status(workers[worker_id].get_id())
-                    assigned_chunks -= 1
-                del workers[worker_id] # Delete the worker
+        worker = workers.get(worker_id)
+    if (not worker):
+        return
+
+    with worker.get_lock():
+        try:
+            if (worker.get_websocket()):
+                await worker.get_websocket().close()
+        except:
+            pass
+
+        for chunk_id in list(worker.get_file_handles().keys()):
+            worker.close_file_handle(chunk_id)
+            file_path = worker.get_file_paths().get(chunk_id)
+            if (file_path and os.path.exists(file_path)):
+                os.remove(file_path)
+            worker.remove_file_path(chunk_id)
+            worker.remove_chunk_hash(chunk_id)
+            if (chunk_id in chunks):
+                chunks[chunk_id].remove_worker_status(worker.get_id())
+                assigned_chunks = max(0, assigned_chunks - 1)
+
+    with workers_lock:
+        workers.pop(worker_id, None)
 
 
 ###
@@ -231,7 +239,8 @@ def cleanup_chunk_workers(chunk_id: str) -> None:
                 if (worker_id in workers):
                     with workers[worker_id].get_lock():
                         if (not chunk.get_worker_hash_only(worker_id)):
-                            workers[worker_id].close_file_handle(chunk.get_id())
+                            if (chunk.get_id() in workers[worker_id].get_file_handles()):
+                                workers[worker_id].close_file_handle(chunk.get_id())
                             workers[worker_id].remove_file_path(chunk.get_id())
                         workers[worker_id].remove_chunk_hash(chunk.get_id())
                 # Remove status

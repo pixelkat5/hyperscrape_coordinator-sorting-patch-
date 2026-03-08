@@ -37,7 +37,7 @@ class Worker():
         self._chunk_hashes[chunk_id] = hash
     
     def remove_chunk_hash(self, chunk_id: str):
-        return self._chunk_hashes[chunk_id]
+        return self._chunk_hashes.pop(chunk_id, None)
 
     def get_file_paths(self):
         return self._file_paths
