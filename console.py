@@ -2,6 +2,7 @@ import signal
 from threading import Thread
 from typing import Callable
 from state_db import db
+import asyncio
 import time
 import state
 import os
@@ -121,7 +122,7 @@ class Console():
         state.shutting_down = True
         print("Removing workers...")
         for worker_id in list(state.workers.keys()):
-            state.remove_worker(worker_id)
+            asyncio.run(state.remove_worker(worker_id))
         print("Closing database connection")
         db.close()
         print("Quit!")
